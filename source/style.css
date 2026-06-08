@@ -1,36 +1,38 @@
 @import "tailwindcss";
 
-.dev-platform-layout {
+.token-platform-layout {
   min-height: 100vh;
   min-height: 100dvh;
   background: #f0f2f5;
+  display: flex;
 }
 
-.dev-platform-sider {
-  background: #fff !important;
-  border-right: 1px solid #f0f0f0;
-  box-shadow: 1px 0 0 rgba(0, 0, 0, 0.02);
+.token-platform-sider {
+  background: #001529;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.dev-platform-sider .ant-layout-sider-children {
+.token-platform-sider .ant-layout-sider-children {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
 
-.sider-brand {
+.token-platform-sider .sider-brand {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 16px;
   min-height: 64px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.brand-logo {
+.token-platform-sider .brand-logo,
+.mobile-drawer-brand .brand-logo {
   width: 32px;
   height: 32px;
-  border-radius: 4px;
+  border-radius: 6px;
   background: #1677ff;
   display: flex;
   align-items: center;
@@ -41,59 +43,170 @@
   flex-shrink: 0;
 }
 
-.brand-text {
-  color: #141414;
+.token-platform-sider .brand-text,
+.mobile-drawer-brand .brand-text {
+  color: #fff;
   font-size: 15px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.dev-platform-menu {
+.token-platform-sider .collapse-trigger {
+  cursor: pointer;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  margin-left: auto;
+}
+
+.token-platform-sider .collapse-trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.token-platform-menu {
   flex: 1;
   border-inline-end: none !important;
-  padding: 8px 0;
+  background: transparent !important;
+  overflow-y: auto;
 }
 
-.dev-platform-menu .ant-menu-item,
-.dev-platform-menu .ant-menu-submenu-title {
+.token-platform-menu .ant-menu-item,
+.token-platform-menu .ant-menu-submenu-title {
   margin: 2px 8px !important;
-  border-radius: 4px;
+  border-radius: 6px;
   width: calc(100% - 16px);
 }
 
-.dev-platform-menu .ant-menu-item-selected {
-  background: #e6f4ff !important;
-  color: #1677ff !important;
-  font-weight: 500;
+.token-platform-menu .ant-menu-item-selected {
+  background: #1677ff !important;
 }
 
-.dev-platform-menu .ant-menu-item-selected .anticon {
-  color: #1677ff;
+.token-platform-menu .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  color: #fff !important;
 }
 
-.dev-platform-main {
+.token-platform-main {
+  flex: 1;
   min-width: 0;
   background: #f0f2f5;
+  overflow: auto;
 }
 
-.dev-platform-header {
+.token-platform-content {
+  padding: 0;
+  min-height: 100%;
+}
+
+.token-platform-header {
   background: #fff;
-  padding: 12px 24px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.dev-platform-content {
-  padding: 24px;
-  min-height: calc(100vh - 49px);
-}
-
-.dev-platform-page {
-  max-width: 1440px;
-}
-
-.page-loading {
+  padding: 0 24px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  border-bottom: 1px solid #f0f0f0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.header-breadcrumb {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.header-breadcrumb .ant-breadcrumb {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-right {
+  flex-shrink: 0;
+}
+
+.mobile-menu-btn {
+  flex-shrink: 0;
+  font-size: 18px !important;
+}
+
+.token-platform-body {
+  padding: 24px;
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  min-height: 320px;
+  min-height: 400px;
+  gap: 16px;
+}
+
+/* 移动端导航抽屉 */
+.token-platform-mobile-drawer .ant-drawer-body {
+  padding: 0 !important;
+  background: #001529;
+}
+
+.token-platform-mobile-drawer .ant-drawer-header {
+  display: none;
+}
+
+.mobile-drawer-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ── 平板 ── */
+@media (max-width: 991px) {
+  .token-platform-body {
+    padding: 20px 16px;
+  }
+
+  .token-platform-header {
+    padding: 0 16px;
+  }
+}
+
+/* ── 手机 ── */
+@media (max-width: 767px) {
+  .token-platform-body {
+    padding: 12px;
+  }
+
+  .token-platform-header {
+    padding: 0 12px;
+    min-height: 48px;
+  }
+
+  .header-username {
+    display: none;
+  }
+
+  .page-title-block h4 {
+    font-size: 16px !important;
+  }
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Space } from 'antd';
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { SearchOutlined, ReloadOutlined, ExportOutlined } from '@ant-design/icons';
 
 interface PageHeaderProps {
   title: string;
@@ -23,9 +23,11 @@ export function PageHeader({ title, description, extra }: PageHeaderProps) {
 interface FilterActionsProps {
   onSearch?: () => void;
   onReset?: () => void;
+  showExport?: boolean;
+  onExport?: () => void;
 }
 
-export function FilterActions({ onSearch, onReset }: FilterActionsProps) {
+export function FilterActions({ onSearch, onReset, showExport, onExport }: FilterActionsProps) {
   return (
     <Space wrap className="filter-actions-inner">
       <Button type="primary" icon={<SearchOutlined />} onClick={onSearch}>
@@ -34,6 +36,7 @@ export function FilterActions({ onSearch, onReset }: FilterActionsProps) {
       <Button icon={<ReloadOutlined />} onClick={onReset}>
         重置
       </Button>
+      {showExport ? <Button icon={<ExportOutlined />} onClick={onExport}>导出</Button> : null}
     </Space>
   );
 }
