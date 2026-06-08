@@ -1,3 +1,5 @@
+import dayjs, { type Dayjs } from 'dayjs';
+
 export interface GroupItem {
   id: string;
   name: string;
@@ -15,6 +17,10 @@ export interface ChannelPriceItem {
   priceConfigMode?: ChannelPriceConfigMode;
   /** 折扣系数，仅 priceConfigMode 为 discount 时有效 */
   discountRate?: number;
+  /** 生效日期（精确到秒） */
+  effectiveDate?: string;
+  /** 渠道价格记录更新时间（精确到秒） */
+  updatedAt?: string;
   /** 按 Token 计费 */
   inputPrice?: number;
   completionPrice?: number;
@@ -180,7 +186,21 @@ export const mockModels: ModelPricingItem[] = [
         channelId: 'c1',
         channelName: 'OpenAI-主渠道',
         priceConfigMode: 'discount',
+        discountRate: 0.95,
+        effectiveDate: '2024-06-01 00:00:00',
+        updatedAt: '2024-06-15 10:00:00',
+        inputPrice: 17.1,
+        completionPrice: 68.4,
+        cacheReadPrice: 8.55,
+        cacheWritePrice: 3.42
+      },
+      {
+        channelId: 'c1',
+        channelName: 'OpenAI-主渠道',
+        priceConfigMode: 'discount',
         discountRate: 0.889,
+        effectiveDate: '2025-01-01 00:00:00',
+        updatedAt: '2025-05-20 14:30:00',
         inputPrice: 16.0,
         completionPrice: 64.01,
         cacheReadPrice: 7.99,
@@ -190,8 +210,29 @@ export const mockModels: ModelPricingItem[] = [
         channelId: 'c2',
         channelName: 'OpenAI-备用',
         priceConfigMode: 'custom',
+        effectiveDate: '2024-01-01 00:00:00',
+        updatedAt: '2024-01-10 08:00:00',
+        inputPrice: 18.0,
+        completionPrice: 72.0
+      },
+      {
+        channelId: 'c2',
+        channelName: 'OpenAI-备用',
+        priceConfigMode: 'custom',
+        effectiveDate: '2025-03-15 00:00:00',
+        updatedAt: '2025-04-10 16:00:00',
         inputPrice: 17.5,
         completionPrice: 70.0
+      },
+      {
+        channelId: 'c3',
+        channelName: 'Gemini-测试',
+        priceConfigMode: 'discount',
+        discountRate: 0.95,
+        effectiveDate: '2027-01-01 00:00:00',
+        updatedAt: '2025-06-02 11:20:00',
+        inputPrice: 17.1,
+        completionPrice: 68.4
       }
     ],
     updatedAt: '2025-05-20 14:30:00'
@@ -209,6 +250,17 @@ export const mockModels: ModelPricingItem[] = [
         channelId: 'c1',
         channelName: 'OpenAI-主渠道',
         priceConfigMode: 'custom',
+        effectiveDate: '2024-08-01 00:00:00',
+        updatedAt: '2024-08-05 09:00:00',
+        inputPrice: 1.2,
+        completionPrice: 4.8
+      },
+      {
+        channelId: 'c1',
+        channelName: 'OpenAI-主渠道',
+        priceConfigMode: 'custom',
+        effectiveDate: '2025-02-01 00:00:00',
+        updatedAt: '2025-05-18 09:15:00',
         inputPrice: 1.0,
         completionPrice: 4.0
       }
@@ -225,7 +277,15 @@ export const mockModels: ModelPricingItem[] = [
     completionPrice: 108.0,
     cacheReadPrice: 2.16,
     cacheWritePrice: 27.0,
-    channelPrices: [{ channelId: 'c2', channelName: 'Anthropic-备用', inputPrice: 20.0, completionPrice: 100.0 }],
+    channelPrices: [{
+      channelId: 'c2',
+      channelName: 'Anthropic-备用',
+      priceConfigMode: 'custom',
+      effectiveDate: '2025-04-01 00:00:00',
+      updatedAt: '2025-05-19 16:45:00',
+      inputPrice: 20.0,
+      completionPrice: 100.0
+    }],
     updatedAt: '2025-05-19 16:45:00'
   },
   {
@@ -250,7 +310,15 @@ export const mockModels: ModelPricingItem[] = [
     inputPrice: 0,
     audioInputPrice: 0.043,
     audioOutputPrice: 0.172,
-    channelPrices: [{ channelId: 'c3', channelName: 'Gemini-测试', inputPrice: 0.04, audioOutputPrice: 0.16 }],
+    channelPrices: [{
+      channelId: 'c3',
+      channelName: 'Gemini-测试',
+      priceConfigMode: 'custom',
+      effectiveDate: '2025-05-01 00:00:00',
+      updatedAt: '2025-05-15 08:00:00',
+      inputPrice: 0.04,
+      audioOutputPrice: 0.16
+    }],
     updatedAt: '2025-05-15 08:00:00'
   },
   {
@@ -264,14 +332,34 @@ export const mockModels: ModelPricingItem[] = [
       {
         channelId: 'c1',
         channelName: 'OpenAI-主渠道',
+        priceConfigMode: 'custom',
+        effectiveDate: '2024-06-01 00:00:00',
+        updatedAt: '2024-06-20 14:00:00',
+        perCallPrice: 0.08
+      },
+      {
+        channelId: 'c1',
+        channelName: 'OpenAI-主渠道',
         priceConfigMode: 'discount',
         discountRate: 0.9,
+        effectiveDate: '2025-01-01 00:00:00',
+        updatedAt: '2025-05-21 10:00:00',
         perCallPrice: 0.072
       },
       {
         channelId: 'c2',
         channelName: 'OpenAI-备用',
         priceConfigMode: 'custom',
+        effectiveDate: '2024-03-01 00:00:00',
+        updatedAt: '2024-03-08 11:30:00',
+        perCallPrice: 0.085
+      },
+      {
+        channelId: 'c2',
+        channelName: 'OpenAI-备用',
+        priceConfigMode: 'custom',
+        effectiveDate: '2025-06-01 00:00:00',
+        updatedAt: '2025-05-28 15:45:00',
         perCallPrice: 0.075
       }
     ],
@@ -813,11 +901,171 @@ export function getProjectKeyCount(projectId: string, keys = mockApiKeys) {
   return keys.filter((k) => k.projectId === projectId).length;
 }
 
-export function formatChannelSummary(channelPrices: ChannelPriceItem[]) {
-  const names = channelPrices.map((c) => c.channelName).filter(Boolean);
+/** 渠道价格生效状态：已失效 / 生效中 / 待生效 */
+export type ChannelPriceStatus = 'expired' | 'active' | 'pending';
+
+export const CHANNEL_PRICE_STATUS_LABELS: Record<ChannelPriceStatus, string> = {
+  expired: '已失效',
+  active: '生效中',
+  pending: '待生效'
+};
+
+export function parseChannelDateTime(value?: string): Dayjs | null {
+  if (!value?.trim()) return null;
+  const parsed = dayjs(value.trim());
+  return parsed.isValid() ? parsed : null;
+}
+
+/** 渠道价格列表统一排序：生效日期倒序（晚生效在前） */
+export function sortChannelPricesByEffectiveDateDesc<T extends { effectiveDate?: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aDate = parseChannelDateTime(a.effectiveDate);
+    const bDate = parseChannelDateTime(b.effectiveDate);
+    if (!aDate && !bDate) return 0;
+    if (!aDate) return 1;
+    if (!bDate) return -1;
+    return bDate.valueOf() - aDate.valueOf();
+  });
+}
+
+/** 渠道价格管理 Tab 列表排序：更新时间倒序（最近更新在前） */
+export function sortChannelPricesByUpdatedAtDesc<T extends { updatedAt?: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aDate = parseChannelDateTime(a.updatedAt);
+    const bDate = parseChannelDateTime(b.updatedAt);
+    if (!aDate && !bDate) return 0;
+    if (!aDate) return 1;
+    if (!bDate) return -1;
+    return bDate.valueOf() - aDate.valueOf();
+  });
+}
+
+function isSameChannelPriceRecord(a: ChannelPriceItem, b: ChannelPriceItem) {
+  return a.channelId === b.channelId && a.effectiveDate === b.effectiveDate;
+}
+
+/**
+ * 渠道价格状态：仅依据生效日期与当前时间对比。
+ * - 待生效：当前时间早于生效日期
+ * - 生效中：已达生效日期，且为同渠道下生效日期最晚的一条
+ * - 已失效：已达生效日期，但被同渠道更晚生效的记录取代
+ */
+export function getChannelPriceStatus(
+  item: ChannelPriceItem,
+  channelPrices: ChannelPriceItem[],
+  now: Dayjs = dayjs()
+): ChannelPriceStatus {
+  const effective = parseChannelDateTime(item.effectiveDate);
+  if (!effective) return 'active';
+  if (now.isBefore(effective)) return 'pending';
+
+  const sameChannel = channelPrices.filter((row) => row.channelId === item.channelId);
+  const effectiveOnOrBefore = sameChannel.filter((row) => {
+    const rowEffective = parseChannelDateTime(row.effectiveDate);
+    return rowEffective != null && !now.isBefore(rowEffective);
+  });
+
+  if (effectiveOnOrBefore.length === 0) return 'expired';
+
+  let latest = effectiveOnOrBefore[0];
+  for (const row of effectiveOnOrBefore) {
+    const rowEffective = parseChannelDateTime(row.effectiveDate)!;
+    const latestEffective = parseChannelDateTime(latest.effectiveDate)!;
+    if (rowEffective.isAfter(latestEffective)) latest = row;
+  }
+
+  return isSameChannelPriceRecord(item, latest) ? 'active' : 'expired';
+}
+
+export function isChannelPriceEffective(
+  item: ChannelPriceItem,
+  channelPrices: ChannelPriceItem[],
+  now: Dayjs = dayjs()
+) {
+  return getChannelPriceStatus(item, channelPrices, now) === 'active';
+}
+
+export function getEffectiveChannelPrices(channelPrices: ChannelPriceItem[], now: Dayjs = dayjs()) {
+  return channelPrices.filter((item) => isChannelPriceEffective(item, channelPrices, now));
+}
+
+/** 渠道商摘要：仅展示已添加且已生效的渠道商名称，超过 2 个以省略号展示 */
+export function formatChannelSummary(channelPrices: ChannelPriceItem[], now: Dayjs = dayjs()) {
+  const names = getEffectiveChannelPrices(channelPrices, now).map((c) => c.channelName).filter(Boolean);
   if (names.length === 0) return '-';
   if (names.length <= 2) return names.join('、');
   return `${names.slice(0, 2).join('、')}…`;
+}
+
+/** 同模型同渠道下状态为「待生效」的渠道价格（至多一条） */
+export function findPendingChannelPrice(
+  channelId: string,
+  channelPrices: ChannelPriceItem[],
+  now: Dayjs = dayjs()
+): ChannelPriceItem | undefined {
+  return channelPrices.find(
+    (item) => item.channelId === channelId && getChannelPriceStatus(item, channelPrices, now) === 'pending'
+  );
+}
+
+/** 同模型同渠道下当前「生效中」的渠道价格（用于计费，取生效日期最晚且已到达的一条） */
+export function getCurrentChannelPriceForBilling(
+  channelPrices: ChannelPriceItem[],
+  channelId: string,
+  now: Dayjs = dayjs()
+): ChannelPriceItem | undefined {
+  return getEffectiveChannelPrices(channelPrices, now).find((item) => item.channelId === channelId);
+}
+
+/**
+ * 合并渠道价格更新：同模型同渠道仅允许一条「待生效」。
+ * 到达生效日后，同渠道生效日期最晚的记录自动成为当前生效价（用量按最新价统计）。
+ */
+export function mergeChannelPriceUpdates(
+  existing: ChannelPriceItem[],
+  updates: ChannelPriceItem[],
+  now: Dayjs = dayjs()
+): ChannelPriceItem[] {
+  let result = [...existing];
+
+  for (const update of updates) {
+    const channelId = update.channelId;
+    const effective = parseChannelDateTime(update.effectiveDate);
+    const hasActive = result.some(
+      (item) => item.channelId === channelId && getChannelPriceStatus(item, result, now) === 'active'
+    );
+    const isPending = effective != null && now.isBefore(effective);
+
+    if (isPending) {
+      result = result.filter(
+        (item) => !(item.channelId === channelId && getChannelPriceStatus(item, result, now) === 'pending')
+      );
+      result.push(update);
+      continue;
+    }
+
+    if (!hasActive) {
+      result.push(update);
+    }
+  }
+
+  return result;
+}
+
+/** 校验同模型同渠道是否仅有一条待生效价格 */
+export function validateSinglePendingPerChannel(channelPrices: ChannelPriceItem[]): string | null {
+  const pendingCountByChannel = new Map<string, { count: number; name: string }>();
+  for (const item of channelPrices) {
+    if (getChannelPriceStatus(item, channelPrices) !== 'pending') continue;
+    const prev = pendingCountByChannel.get(item.channelId) ?? { count: 0, name: item.channelName };
+    pendingCountByChannel.set(item.channelId, { count: prev.count + 1, name: item.channelName });
+  }
+  for (const [, { count, name }] of pendingCountByChannel) {
+    if (count > 1) {
+      return `同一模型、同一渠道「${name}」仅允许存在一条待生效价格`;
+    }
+  }
+  return null;
 }
 
 export type ApiKeyDisplayStatus = 'active' | 'closed' | 'exhausted';

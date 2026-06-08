@@ -14,6 +14,11 @@ export function roundUnitPrice(value: number): number {
   return Math.round(value * factor) / factor;
 }
 
+export function roundDiscountRate(value: number): number {
+  const factor = 10 ** DISCOUNT_RATE_DECIMALS;
+  return Math.round(value * factor) / factor;
+}
+
 export function roundAmountDisplay(value: number): number {
   const factor = 10 ** AMOUNT_DISPLAY_DECIMALS;
   return Math.round(value * factor) / factor;
