@@ -36,9 +36,30 @@ export interface ChannelPriceItem {
   perCallPrice?: number;
 }
 
+/** 模型厂商类型（字典可配置） */
+export const mockModelVendorTypes = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'qwen', label: 'Qwen' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'deepseek', label: 'DeepSeek' }
+] as const;
+
+export type ModelVendorType = (typeof mockModelVendorTypes)[number]['value'];
+
+export function getModelVendorTypeLabel(
+  value?: string,
+  vendors: readonly { value: string; label: string }[] = mockModelVendorTypes
+) {
+  return vendors.find((item) => item.value === value)?.label ?? value ?? '—';
+}
+
 export interface ModelPricingItem {
   id: string;
   modelName: string;
+  /** 厂商类型，取自字典 mockModelVendorTypes */
+  vendorType: ModelVendorType;
   modelType: 'vector' | 'text' | 'image' | 'video';
   remark?: string;
   billingMode: 'token' | 'count';
@@ -174,6 +195,7 @@ export const mockModels: ModelPricingItem[] = [
   {
     id: 'm1',
     modelName: 'gpt-4o',
+    vendorType: 'openai',
     modelType: 'text',
     billingMode: 'token',
     tierPricing: false,
@@ -240,6 +262,7 @@ export const mockModels: ModelPricingItem[] = [
   {
     id: 'm2',
     modelName: 'gpt-4o-mini',
+    vendorType: 'openai',
     modelType: 'text',
     billingMode: 'token',
     tierPricing: false,
@@ -270,6 +293,7 @@ export const mockModels: ModelPricingItem[] = [
   {
     id: 'm3',
     modelName: 'claude-3-5-sonnet',
+    vendorType: 'anthropic',
     modelType: 'text',
     billingMode: 'token',
     tierPricing: false,
@@ -291,6 +315,7 @@ export const mockModels: ModelPricingItem[] = [
   {
     id: 'm4',
     modelName: 'gemini-1.5-pro',
+    vendorType: 'gemini',
     modelType: 'image',
     billingMode: 'token',
     tierPricing: false,
@@ -304,6 +329,7 @@ export const mockModels: ModelPricingItem[] = [
   {
     id: 'm5',
     modelName: 'whisper-1',
+    vendorType: 'openai',
     modelType: 'video',
     billingMode: 'token',
     tierPricing: false,
@@ -324,6 +350,7 @@ export const mockModels: ModelPricingItem[] = [
   {
     id: 'm6',
     modelName: 'dall-e-3',
+    vendorType: 'openai',
     modelType: 'image',
     billingMode: 'count',
     tierPricing: false,

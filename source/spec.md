@@ -40,6 +40,7 @@
   - **官方价格 Tab**：查询区含【查询】/【重置】；模型列表分页展示，可新增/编辑/删除；**渠道商数量**（仅统计生效中）、**渠道商摘要**（已生效渠道名称，超 2 个省略）
   - **渠道价格状态**：待生效 / 生效中 / 已失效（仅按生效日期与当前时间；无失效日期字段）
   - **渠道价格列表排序**：渠道价格管理 Tab 按更新时间倒序；其余渠道价格列表按生效日期倒序（晚生效在前）
+  - **厂商类型**：基本信息必填；字典可配置（OpenAI / Anthropic / Gemini / Qwen / Kimi / DeepSeek 等）；官方价格列表模型名称下展示标签
   - **新增模型**：官方价格下方可配置渠道价格（渠道来源下拉取自渠道管理；价格配置为折扣/自定义；生效日期精确到秒，默认立即生效）
     - 按 Token + 折扣：填折扣系数（3 位小数），10 项渠道价只读预览，保存时 = 官方价 × 系数（9 位小数）
     - 按 Token + 自定义：10 项渠道价可编辑（与官方价字段一致）
@@ -72,6 +73,7 @@
 - `ProjectItem`: quotaMode, totalQuota, remainingQuota, consumptionTotal
 - `ApiKeyItem`: quotaMode, totalQuota, remainingQuota, consumptionTotal
 - `ChannelItem`: used/remaining（CNY）, rechargeAmount
+- `ModelPricingItem`: vendorType（厂商类型字典）
 - `ChannelPriceItem`: priceConfigMode, discountRate, effectiveDate, updatedAt, 10 项价格
 - `UsageLogItem`: …, balanceAfter
 

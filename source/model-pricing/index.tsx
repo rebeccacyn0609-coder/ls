@@ -32,6 +32,8 @@ import type { ColumnsType } from 'antd/es/table';
 import {
   mockModels,
   mockChannels,
+  mockModelVendorTypes,
+  getModelVendorTypeLabel,
   formatChannelSummary,
   getEffectiveChannelPrices,
   getChannelPriceStatus,
@@ -751,6 +753,7 @@ function ModelBasicInfoReadOnly({ model }: { model: ModelPricingItem }) {
   return (
     <Descriptions column={2} size="small" bordered className="model-info-readonly">
       <Descriptions.Item label="模型名称">{model.modelName}</Descriptions.Item>
+      <Descriptions.Item label="厂商类型">{getModelVendorTypeLabel(model.vendorType)}</Descriptions.Item>
       <Descriptions.Item label="模型类型">{typeLabel}</Descriptions.Item>
       <Descriptions.Item label="计费模式">{modeLabel}</Descriptions.Item>
       <Descriptions.Item label="阶梯价格">{model.tierPricing ? '是' : '否'}</Descriptions.Item>
@@ -1227,7 +1230,16 @@ export default function ModelPricingPage() {
   };
 
   const officialColumns: ColumnsType<ModelPricingItem> = [
-    { title: '模型名称', dataIndex: 'modelName', width: 160 },
+    {
+      title: '模型名称',
+      width: 180,
+      render: (_, r) => (
+        <Space direction="vertical" size={2}>
+          <Typography.Text>{r.modelName}</Typography.Text>
+          <Tag color="blue" style={{ margin: 0 }}>{getModelVendorTypeLabel(r.vendorType)}</Tag>
+        </Space>
+      )
+    },
     {
       title: '模式',
       width: 90,
@@ -1320,7 +1332,7 @@ export default function ModelPricingPage() {
                     rowKey="id"
                     columns={officialColumns}
                     dataSource={filteredModels}
-                    scroll={{ x: 1280 }}
+                    scroll={{ x: 1300 }}
                     pagination={TABLE_LIST_PAGINATION}
                     size="middle"
                   />
@@ -1401,17 +1413,24 @@ export default function ModelPricingPage() {
                 </Form.Item>
               </FormCol>
               <FormCol>
-                <Form.Item name="modelType" label="模型类型" rules={[{ required: true, message: '请选择模型类型' }]}>
-                  <Select placeholder="请选择" options={MODEL_TYPES} />
+                <Form.Item name="vendorType" label="厂商类型" rules={[{ required: true, message: '请选择厂商类型' }]}>
+                  <Select placeholder="请选择" allowClear options={[...mockModelVendorTypes]} />
                 </Form.Item>
               </FormCol>
             </FormRow>
             <FormRow>
               <FormCol>
+                <Form.Item name="modelType" label="模型类型" rules={[{ required: true, message: '请选择模型类型' }]}>
+                  <Select placeholder="请选择" options={MODEL_TYPES} />
+                </Form.Item>
+              </FormCol>
+              <FormCol>
                 <Form.Item name="billingMode" label="计费模式" rules={[{ required: true }]}>
                   <Select options={[{ value: 'token', label: '按 Token' }, { value: 'count', label: '按次数' }]} />
                 </Form.Item>
               </FormCol>
+            </FormRow>
+            <FormRow>
               <FormCol>
                 <Form.Item name="tierPricing" label="阶梯价格">
                   <Radio.Group>
