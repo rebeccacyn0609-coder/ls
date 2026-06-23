@@ -2575,7 +2575,7 @@ export function ModelPricingPage({
               children: (
                 <>
                   <Typography.Paragraph type="secondary" style={{ marginBottom: 16, fontSize: 13 }}>
-                    汇总展示全部渠道价格记录；同一模型同一渠道仅允许一条待生效价格。生效中/已失效可查看详情，待生效可编辑或删除。
+                    汇总展示全部渠道价格记录；同一模型同一渠道，若分阶梯价格，每个区间只允许一条待生效，若不分阶梯价格，只允许一条。生效中/已失效可查看详情，待生效可编辑或删除。
                   </Typography.Paragraph>
                   <Form
                     form={channelFilterForm}
