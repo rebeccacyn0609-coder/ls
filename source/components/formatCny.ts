@@ -19,6 +19,12 @@ export function roundDiscountRate(value: number): number {
   return Math.round(value * factor) / factor;
 }
 
+/** 折扣系数展示（3 位小数） */
+export function formatDiscountRate(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  return roundDiscountRate(value).toFixed(DISCOUNT_RATE_DECIMALS);
+}
+
 export function roundAmountDisplay(value: number): number {
   const factor = 10 ** AMOUNT_DISPLAY_DECIMALS;
   return Math.round(value * factor) / factor;

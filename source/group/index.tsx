@@ -117,7 +117,7 @@ export default function GroupPage() {
         onCancel={() => setModalOpen(false)}
         width={520}
       >
-        <Form form={form} layout="vertical" requiredMark="optional">
+        <Form form={form} layout="vertical">
           <FormSection title="分组信息">
             <FormRow>
               <FormCol>

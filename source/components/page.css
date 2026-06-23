@@ -869,3 +869,11 @@
     width: 100%;
   }
 }
+
+/* 模型定价 · 列表官方价格摘要中的输入区间 */
+.input-range-summary-highlight {
+  color: #1677ff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}

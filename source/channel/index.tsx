@@ -515,7 +515,7 @@ export default function ChannelPage() {
           </Space>
         }
       >
-        <Form form={form} layout="vertical" requiredMark="optional">
+        <Form form={form} layout="vertical">
           <FormSection title="基本信息">
             <FormRow>
               <FormCol>
@@ -745,7 +745,7 @@ export default function ChannelPage() {
 
           <div className="channel-recharge-form-panel">
             <div className="form-section-title">记账操作</div>
-            <Form form={channelRechargeForm} layout="vertical" requiredMark="optional">
+            <Form form={channelRechargeForm} layout="vertical">
               <Form.Item name="adjustType" label="充值/扣款类型" rules={[{ required: true, message: '请选择类型' }]}>
                 <Radio.Group className="channel-recharge-adjust-type" optionType="button" buttonStyle="solid">
                   <Radio.Button value="recharge">充值</Radio.Button>

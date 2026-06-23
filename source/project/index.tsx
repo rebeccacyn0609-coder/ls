@@ -776,7 +776,7 @@ export default function ProjectPage() {
           </Space>
         }
       >
-        <Form form={projectForm} layout="vertical" requiredMark="optional">
+        <Form form={projectForm} layout="vertical">
           <FormSection title="基本信息">
             <FormRow>
               <FormCol>
@@ -1015,7 +1015,7 @@ export default function ProjectPage() {
         onCancel={() => setKeyModalOpen(false)}
         width={560}
       >
-        <Form form={keyForm} layout="vertical" requiredMark="optional">
+        <Form form={keyForm} layout="vertical">
           <FormSection title="基本信息">
             <FormRow>
               <FormCol>

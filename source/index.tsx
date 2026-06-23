@@ -43,6 +43,7 @@ import {
 } from '@ant-design/icons';
 
 import type { KeyDesc, DataDesc, ConfigItem, EventItem, AxureProps, AxureHandle } from '../../common/axure-types';
+import { AXHUB_FORM_PROVIDER_CONFIG, AXHUB_FORM_THEME_COMPONENTS } from '../../common/antdFormConfig';
 import { useResponsive } from './components/useResponsive';
 
 const DashboardPage = lazy(() => import('./dashboard'));
@@ -205,12 +206,14 @@ const Component = forwardRef<AxureHandle, AxureProps>(function TokenPlatform(inn
 
   return (
     <ConfigProvider
+      form={AXHUB_FORM_PROVIDER_CONFIG}
       theme={{
         token: {
           colorPrimary: '#1677ff',
           borderRadius: 6,
           fontSize: 14
-        }
+        },
+        components: AXHUB_FORM_THEME_COMPONENTS
       }}
     >
       <Layout className={`token-platform-layout ${isMobile ? 'is-mobile' : ''} ${isTablet ? 'is-tablet' : ''}`}>

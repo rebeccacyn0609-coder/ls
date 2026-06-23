@@ -14,8 +14,8 @@ export type ChannelPriceConfigMode = 'discount' | 'custom';
 export interface PromptPriceGroup {
   /** 输入区间下限（K Tokens，必填） */
   rangeMin: number;
-  /** 输入区间上限（K Tokens，包含关系，如 128 表示 128k） */
-  rangeMax: number;
+  /** 输入区间上限（K Tokens，选填；包含关系，如 128 表示 128k；未填表示无上界） */
+  rangeMax?: number;
   /** 按区间配置折扣时的区间折扣系数 */
   discountRate?: number;
   /** 按次数计费 */
@@ -1153,15 +1153,19 @@ export function findPendingChannelPrice(
 
 /** 同模型同渠道下当前「生效中」的渠道价格（用于计费，取生效日期最晚且已到达的一条） */
 export function getPromptRangeKey(group: Pick<PromptPriceGroup, 'rangeMin' | 'rangeMax'>): string {
-  return `${group.rangeMin}-${group.rangeMax}`;
+  const max =
+    typeof group.rangeMax === 'number' && !Number.isNaN(group.rangeMax)
+      ? group.rangeMax
+      : 'inf';
+  return `${group.rangeMin}-${max}`;
 }
 
 function isValidPromptPriceGroup(group: PromptPriceGroup): boolean {
-  return typeof group.rangeMin === 'number'
-    && typeof group.rangeMax === 'number'
-    && !Number.isNaN(group.rangeMin)
-    && !Number.isNaN(group.rangeMax)
-    && group.rangeMax > group.rangeMin;
+  if (typeof group.rangeMin !== 'number' || Number.isNaN(group.rangeMin)) return false;
+  if (group.rangeMax == null || (typeof group.rangeMax === 'number' && Number.isNaN(group.rangeMax))) {
+    return true;
+  }
+  return group.rangeMax > group.rangeMin;
 }
 
 export function mergeOfficialInputRanges(groups: PromptPriceGroup[]): PromptPriceGroup[] {
@@ -1209,7 +1213,7 @@ export function resolveEffectiveTierChannelPrices(
     .filter((group): group is PromptPriceGroup => !!group);
 }
 
-/** 判断全区间折扣记录中的某区间是否已被后续按区间折扣记录取代 */
+/** 判断全区间折扣记录中的某区间是否已被后续记录覆盖（按区间折扣 / 自定义 / 新的全区间折扣等） */
 export function isTierRangeSuperseded(
   item: ChannelPriceItem,
   group: PromptPriceGroup,
@@ -1222,11 +1226,53 @@ export function isTierRangeSuperseded(
 
   const key = getPromptRangeKey(group);
   return channelPrices.some((record) => {
-    if (record.channelId !== item.channelId || record.discountByRange !== true) return false;
+    if (record.channelId !== item.channelId) return false;
+    if (isSameChannelPriceRecord(record, item)) return false;
     if (!record.promptPriceGroups?.some((row) => getPromptRangeKey(row) === key)) return false;
     const recordEffective = parseChannelDateTime(record.effectiveDate);
     return recordEffective != null && !now.isBefore(recordEffective) && recordEffective.isAfter(itemEffective);
   });
+}
+
+/** 全区间折扣渠道价（含 promptPriceGroups、且非按区间配置） */
+export function isFullRangeTierDiscountItem(item: ChannelPriceItem): boolean {
+  return item.priceConfigMode === 'discount'
+    && item.discountByRange !== true
+    && (item.promptPriceGroups?.length ?? 0) > 0;
+}
+
+/** 全区间折扣记录中，单个输入区间的展示状态（不受同记录其他区间影响） */
+export function getTierChannelPriceRangeStatus(
+  item: ChannelPriceItem,
+  group: PromptPriceGroup,
+  channelPrices: ChannelPriceItem[],
+  now: Dayjs = dayjs()
+): ChannelPriceStatus {
+  const effective = parseChannelDateTime(item.effectiveDate);
+  if (!effective || now.isBefore(effective)) return 'pending';
+  if (!isFullRangeTierDiscountItem(item)) {
+    return getChannelPriceStatus(item, channelPrices, now);
+  }
+  return isTierRangeSuperseded(item, group, channelPrices, now) ? 'expired' : 'active';
+}
+
+/** 全区间折扣整记录的状态：任一区间仍生效则视为生效中（非整单已失效） */
+export function getTierFullRangeRecordDisplayStatus(
+  item: ChannelPriceItem,
+  channelPrices: ChannelPriceItem[],
+  now: Dayjs = dayjs()
+): ChannelPriceStatus {
+  if (!isFullRangeTierDiscountItem(item)) {
+    return getChannelPriceStatus(item, channelPrices, now);
+  }
+  const groups = item.promptPriceGroups ?? [];
+  if (!groups.length) return getChannelPriceStatus(item, channelPrices, now);
+
+  const statuses = groups.map((group) => getTierChannelPriceRangeStatus(item, group, channelPrices, now));
+  if (statuses.every((status) => status === 'pending')) return 'pending';
+  if (statuses.some((status) => status === 'active')) return 'active';
+  if (statuses.some((status) => status === 'pending')) return 'pending';
+  return 'expired';
 }
 
 export function getCurrentChannelPriceForBilling(

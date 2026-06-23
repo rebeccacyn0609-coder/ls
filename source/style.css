@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "../../common/form-required.css";
 
 .token-platform-layout {
   min-height: 100vh;
