@@ -877,3 +877,7 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
+
+.official-price-readonly-tier .official-price-readonly:last-child {
+  margin-bottom: 0;
+}
