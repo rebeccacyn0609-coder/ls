@@ -819,6 +819,7 @@ function ChannelPriceEntry({
   channelIdDisabled = false,
   officialPriceSource,
   enableTierPromptPricing = false,
+  discountByRangeDisabled = false,
   onRemove
 }: {
   listField: { key: React.Key; name: number };
@@ -831,6 +832,7 @@ function ChannelPriceEntry({
   channelIdDisabled?: boolean;
   officialPriceSource?: ModelPricingItem;
   enableTierPromptPricing?: boolean;
+  discountByRangeDisabled?: boolean;
   onRemove: () => void;
 }) {
   const formValues = Form.useWatch([], form);
@@ -994,7 +996,7 @@ function ChannelPriceEntry({
               initialValue={false}
               rules={[{ required: true }]}
             >
-              <Radio.Group>
+              <Radio.Group disabled={discountByRangeDisabled}>
                 <Radio value={false}>否</Radio>
                 <Radio value={true}>是</Radio>
               </Radio.Group>
@@ -1284,6 +1286,37 @@ function channelItemToFormItem(item: ChannelPriceItem): ChannelPriceFormItem {
   };
 }
 
+/** 待生效全区间折扣（配置时不区分区间）点击编辑：默认切换为按区间配置，并预填当前区间 */
+function isExpandedFullRangePendingEditRow(row: ChannelPriceRow, resolved: ChannelPriceRow): boolean {
+  if (getChannelPriceStatus(resolved, resolved.modelChannelPrices) !== 'pending') return false;
+  if (resolved.priceConfigMode !== 'discount' || resolved.discountByRange === true) return false;
+  if (!isFullRangeTierDiscountItem(resolved)) return false;
+  return row.promptPriceGroups?.length === 1;
+}
+
+function buildChannelEditFormItem(row: ChannelPriceRow, resolved: ChannelPriceRow): ChannelPriceFormItem {
+  const base = channelItemToFormItem(resolved);
+  if (!isExpandedFullRangePendingEditRow(row, resolved)) return base;
+
+  const rangeGroup = row.promptPriceGroups![0];
+  return {
+    ...base,
+    discountByRange: true,
+    discountRate: undefined,
+    promptPriceGroups: [{
+      ...rangeGroup,
+      rangeKey: getPromptRangeKey(rangeGroup),
+      discountRate: resolved.discountRate ?? rangeGroup.discountRate
+    }]
+  };
+}
+
+function shouldLockChannelEditDiscountByRange(resolved: ChannelPriceRow): boolean {
+  return getChannelPriceStatus(resolved, resolved.modelChannelPrices) === 'pending'
+    && resolved.priceConfigMode === 'discount'
+    && resolved.discountByRange === true;
+}
+
 function replaceChannelPriceItem(
   model: ModelPricingItem,
   match: { channelId: string; effectiveDate?: string },
@@ -1525,7 +1558,7 @@ function buildChannelPriceColumns(options: ChannelPriceColumnOptions = {}): Colu
         if (recordStatus === 'pending') {
           return (
             <Space className="table-actions" wrap size={0}>
-              <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onEdit?.(resolved)}>
+              <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onEdit?.(row)}>
                 编辑
               </Button>
               <Popconfirm
@@ -2012,6 +2045,7 @@ export function ModelPricingPage({
   const [maintaining, setMaintaining] = useState<ModelPricingItem | null>(null);
   const [channelDetailRow, setChannelDetailRow] = useState<ChannelPriceRow | null>(null);
   const [channelEditRow, setChannelEditRow] = useState<ChannelPriceRow | null>(null);
+  const [channelEditLockDiscountByRange, setChannelEditLockDiscountByRange] = useState(false);
   const [appliedOfficialKeyword, setAppliedOfficialKeyword] = useState('');
   const [appliedChannelKeyword, setAppliedChannelKeyword] = useState('');
   const [appliedChannelStatus, setAppliedChannelStatus] = useState<ChannelPriceStatus | 'all'>('all');
@@ -2153,9 +2187,10 @@ export function ModelPricingPage({
       return;
     }
     setChannelEditRow(resolved);
+    setChannelEditLockDiscountByRange(shouldLockChannelEditDiscountByRange(resolved));
     channelEditForm.resetFields();
     channelEditForm.setFieldsValue({
-      channelTabEdit: [channelItemToFormItem(resolved)]
+      channelTabEdit: [buildChannelEditFormItem(row, resolved)]
     });
     setChannelEditOpen(true);
   };
@@ -2822,6 +2857,7 @@ export function ModelPricingPage({
                           channelIdDisabled
                           requireFutureEffective
                           hideRemove
+                          discountByRangeDisabled={channelEditLockDiscountByRange}
                           onRemove={() => undefined}
                         />
                         <ChannelPriceStatusReference

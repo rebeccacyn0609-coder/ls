@@ -491,7 +491,7 @@ export const mockModelsForPricingCopy: ModelPricingItem[] = [
         channelName: 'OpenAI-主渠道',
         priceConfigMode: 'discount',
         discountByRange: true,
-        effectiveDate: '2025-07-01 00:00:00',
+        effectiveDate: '2026-12-01 00:00:00',
         updatedAt: '2025-06-15 10:00:00',
         promptPriceGroups: [
           {
@@ -502,6 +502,33 @@ export const mockModelsForPricingCopy: ModelPricingItem[] = [
             completionPrice: 91.8,
             cacheReadPrice: 1.836,
             cacheWritePrice: 22.95
+          }
+        ]
+      },
+      {
+        channelId: 'c2',
+        channelName: 'Anthropic-备用',
+        priceConfigMode: 'discount',
+        discountRate: 0.88,
+        discountByRange: false,
+        effectiveDate: '2026-11-01 00:00:00',
+        updatedAt: '2025-06-16 11:00:00',
+        promptPriceGroups: [
+          {
+            rangeMin: 0,
+            rangeMax: 128,
+            inputPrice: 19.008,
+            completionPrice: 95.04,
+            cacheReadPrice: 1.9008,
+            cacheWritePrice: 23.76
+          },
+          {
+            rangeMin: 128,
+            rangeMax: 200,
+            inputPrice: 28.512,
+            completionPrice: 142.56,
+            cacheReadPrice: 2.8512,
+            cacheWritePrice: 35.64
           }
         ]
       }
