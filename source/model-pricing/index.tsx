@@ -1171,22 +1171,29 @@ const CHANNEL_PRICE_STATUS_COLORS: Record<ChannelPriceStatus, string> = {
   pending: 'processing'
 };
 
+function resolveChannelPriceDisplayStatus(
+  item: ChannelPriceItem,
+  channelPrices: ChannelPriceItem[],
+  rangeGroup?: PromptPriceGroup,
+  fullTierItem?: ChannelPriceItem
+): ChannelPriceStatus {
+  const tierItem = fullTierItem ?? item;
+  if (rangeGroup && isFullRangeTierDiscountItem(tierItem) && (tierItem.promptPriceGroups?.length ?? 0) > 1) {
+    return getTierChannelPriceRangeStatus(tierItem, rangeGroup, channelPrices);
+  }
+  if (isFullRangeTierDiscountItem(tierItem)) {
+    return getTierFullRangeRecordDisplayStatus(tierItem, channelPrices);
+  }
+  return getChannelPriceStatus(item, channelPrices);
+}
+
 function renderChannelPriceStatus(
   item: ChannelPriceItem,
   channelPrices: ChannelPriceItem[],
   rangeGroup?: PromptPriceGroup,
   fullTierItem?: ChannelPriceItem
 ) {
-  const tierItem = fullTierItem ?? item;
-  let status: ChannelPriceStatus;
-
-  if (rangeGroup && isFullRangeTierDiscountItem(tierItem) && (tierItem.promptPriceGroups?.length ?? 0) > 1) {
-    status = getTierChannelPriceRangeStatus(tierItem, rangeGroup, channelPrices);
-  } else if (isFullRangeTierDiscountItem(tierItem)) {
-    status = getTierFullRangeRecordDisplayStatus(tierItem, channelPrices);
-  } else {
-    status = getChannelPriceStatus(item, channelPrices);
-  }
+  const status = resolveChannelPriceDisplayStatus(item, channelPrices, rangeGroup, fullTierItem);
 
   return (
     <Tag color={CHANNEL_PRICE_STATUS_COLORS[status]}>
@@ -1648,19 +1655,30 @@ function ChannelPriceFullReadOnly({
   item,
   billingMode,
   channelPrices,
-  highlightInputRange = false
+  highlightInputRange = false,
+  omitEmptyPriceFields = false
 }: {
   item: ChannelPriceItem;
   billingMode: 'token' | 'count';
   channelPrices: ChannelPriceItem[];
   highlightInputRange?: boolean;
+  omitEmptyPriceFields?: boolean;
 }) {
   const { fullItem, displayGroups } = resolveChannelPriceDetailContext(item, channelPrices);
+  const priceItemOptions = omitEmptyPriceFields ? { omitEmpty: true } : undefined;
 
   if (displayGroups.length) {
     return (
       <div>
-        {displayGroups.map((group) => (
+        {displayGroups.map((group) => {
+          const displayStatus = resolveChannelPriceDisplayStatus(item, channelPrices, group, fullItem);
+          const hideTierRangeBounds = omitEmptyPriceFields && displayStatus === 'active';
+          const tierRangeItems = hideTierRangeBounds
+            ? []
+            : getTierInputRangeDescriptionItems(group, highlightInputRange);
+          const priceItems = getChannelTierPriceDescriptionItems(group, billingMode, priceItemOptions);
+
+          return (
           <Descriptions
             key={getPromptRangeKey(group)}
             column={2}
@@ -1697,11 +1715,12 @@ function ChannelPriceFullReadOnly({
                 : '—'}
             </Descriptions.Item>
             {[
-              ...getTierInputRangeDescriptionItems(group, highlightInputRange),
-              ...getChannelTierPriceDescriptionItems(group, billingMode)
+              ...tierRangeItems,
+              ...priceItems
             ]}
           </Descriptions>
-        ))}
+          );
+        })}
       </div>
     );
   }
@@ -1715,11 +1734,13 @@ function ChannelPriceFullReadOnly({
       <Descriptions.Item label="价格配置">{formatPriceConfigLabel(item)}</Descriptions.Item>
       <Descriptions.Item label="生效日期">{formatEffectiveDateCell(item.effectiveDate)}</Descriptions.Item>
       {billingMode === 'count' ? (
-        <Descriptions.Item label="每次价格（CNY）" span={2}>
-          {formatOptionalUnitPrice(item.perCallPrice)}
-        </Descriptions.Item>
+        omitEmptyPriceFields && !isUnitPriceConfigured(item.perCallPrice) ? null : (
+          <Descriptions.Item label="每次价格（CNY）" span={2}>
+            {formatOptionalUnitPrice(item.perCallPrice)}
+          </Descriptions.Item>
+        )
       ) : (
-        getOfficialPriceDescriptionItems(item, 'token')
+        getOfficialPriceDescriptionItems(item, 'token', priceItemOptions)
       )}
     </Descriptions>
   );
@@ -1730,12 +1751,18 @@ function formatOptionalUnitPrice(value: unknown): string {
   return formatUnitPrice(value as number);
 }
 
+function isUnitPriceConfigured(value: unknown): boolean {
+  return typeof value === 'number' && !Number.isNaN(value);
+}
+
 function getOfficialPriceDescriptionItems(
   source: PromptPriceGroup | ModelPricingItem,
-  billingMode: 'token' | 'count'
+  billingMode: 'token' | 'count',
+  options?: { omitEmpty?: boolean }
 ) {
   if (billingMode === 'count') {
     const perCall = 'perCallPrice' in source ? source.perCallPrice : undefined;
+    if (options?.omitEmpty && !isUnitPriceConfigured(perCall)) return [];
     return [
       <Descriptions.Item key="perCallPrice" label="每次价格（CNY）" span={2}>
         {formatOptionalUnitPrice(perCall)}
@@ -1743,7 +1770,11 @@ function getOfficialPriceDescriptionItems(
     ];
   }
 
-  return OFFICIAL_PRICE_FIELDS.map(({ name, label, unit }) => (
+  const fields = options?.omitEmpty
+    ? OFFICIAL_PRICE_FIELDS.filter(({ name }) => isUnitPriceConfigured(source[name as keyof typeof source]))
+    : OFFICIAL_PRICE_FIELDS;
+
+  return fields.map(({ name, label, unit }) => (
     <Descriptions.Item key={String(name)} label={unit ? `${label} (${unit})` : label}>
       {formatOptionalUnitPrice(source[name as keyof typeof source])}
     </Descriptions.Item>
@@ -1752,9 +1783,11 @@ function getOfficialPriceDescriptionItems(
 
 function getChannelTierPriceDescriptionItems(
   group: PromptPriceGroup,
-  billingMode: 'token' | 'count'
+  billingMode: 'token' | 'count',
+  options?: { omitEmpty?: boolean }
 ) {
   if (billingMode === 'count') {
+    if (options?.omitEmpty && !isUnitPriceConfigured(group.perCallPrice)) return [];
     return [
       <Descriptions.Item key="perCallPrice" label="每次价格（CNY）" span={2}>
         {formatOptionalUnitPrice(group.perCallPrice)}
@@ -1762,7 +1795,11 @@ function getChannelTierPriceDescriptionItems(
     ];
   }
 
-  return OFFICIAL_PRICE_FIELDS.map(({ name, label, unit }) => (
+  const fields = options?.omitEmpty
+    ? OFFICIAL_PRICE_FIELDS.filter(({ name }) => isUnitPriceConfigured(group[name as keyof PromptPriceGroup]))
+    : OFFICIAL_PRICE_FIELDS;
+
+  return fields.map(({ name, label, unit }) => (
     <Descriptions.Item key={String(name)} label={unit ? `${label} (${unit})` : label}>
       {formatOptionalUnitPrice(group[name as keyof PromptPriceGroup])}
     </Descriptions.Item>
@@ -1771,11 +1808,15 @@ function getChannelTierPriceDescriptionItems(
 
 function OfficialPriceReadOnly({
   model,
-  highlightInputRange = false
+  highlightInputRange = false,
+  omitEmptyPriceFields = false
 }: {
   model: ModelPricingItem;
   highlightInputRange?: boolean;
+  omitEmptyPriceFields?: boolean;
 }) {
+  const priceItemOptions = omitEmptyPriceFields ? { omitEmpty: true } : undefined;
+
   if (model.tierPricing && model.promptPriceGroups?.length) {
     return (
       <div className="official-price-readonly-tier">
@@ -1794,7 +1835,7 @@ function OfficialPriceReadOnly({
             )}
             style={{ marginBottom: 12 }}
           >
-            {getOfficialPriceDescriptionItems(group, model.billingMode)}
+            {getOfficialPriceDescriptionItems(group, model.billingMode, priceItemOptions)}
           </Descriptions>
         ))}
       </div>
@@ -1803,7 +1844,7 @@ function OfficialPriceReadOnly({
 
   return (
     <Descriptions column={2} size="small" bordered className="official-price-readonly">
-      {getOfficialPriceDescriptionItems(model, model.billingMode)}
+      {getOfficialPriceDescriptionItems(model, model.billingMode, priceItemOptions)}
     </Descriptions>
   );
 }
@@ -2830,6 +2871,7 @@ export function ModelPricingPage({
               <OfficialPriceReadOnly
                 model={channelDetailModel}
                 highlightInputRange={enableTierPromptPricing}
+                omitEmptyPriceFields
               />
             </FormSection>
             <FormSection title="渠道价格详情">
@@ -2838,6 +2880,7 @@ export function ModelPricingPage({
                 billingMode={channelDetailRow.billingMode}
                 channelPrices={channelDetailRow.modelChannelPrices}
                 highlightInputRange={enableTierPromptPricing}
+                omitEmptyPriceFields
               />
               <ChannelPriceStatusReference
                 channelId={channelDetailRow.channelId}
@@ -2874,7 +2917,11 @@ export function ModelPricingPage({
                   : '官方价格（CNY / 1M Tokens）'
               }
             >
-              <OfficialPriceReadOnly model={channelEditModel} highlightInputRange={enableTierPromptPricing} />
+              <OfficialPriceReadOnly
+                model={channelEditModel}
+                highlightInputRange={enableTierPromptPricing}
+                omitEmptyPriceFields
+              />
             </FormSection>
             <FormSection title="渠道价格维护">
               <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
