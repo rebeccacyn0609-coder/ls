@@ -43,10 +43,15 @@ import {
   sortChannelPricesByEffectiveDateDesc,
   sortChannelPricesByUpdatedAtDesc,
   CHANNEL_PRICE_STATUS_LABELS,
+  getPromptRangeKey,
+  mergeOfficialInputRanges,
+  resolveEffectiveTierChannelPrices,
+  isTierRangeSuperseded,
   type ModelPricingItem,
   type ChannelPriceItem,
   type ChannelPriceConfigMode,
-  type ChannelPriceStatus
+  type ChannelPriceStatus,
+  type PromptPriceGroup
 } from '../components/mockData';
 import { AppDrawer, FormSection, FormRow, FormCol } from '../components/FormLayout';
 import { PageHeader, FilterActions } from '../components/PageHeader';
@@ -63,7 +68,8 @@ const MODEL_TYPES = [
   { value: 'vector', label: '向量模型' },
   { value: 'text', label: '文本模型' },
   { value: 'image', label: '图像生成' },
-  { value: 'video', label: '视频生成' }
+  { value: 'video', label: '视频生成' },
+  { value: 'audio', label: '音频模型' }
 ];
 
 const OFFICIAL_PRICE_FIELDS: { name: keyof ModelPricingItem; label: string; required?: boolean; unit?: string }[] = [
@@ -122,11 +128,99 @@ function formatChannelDateTime(value: unknown): string | undefined {
 }
 
 function createDefaultChannelPriceEntry() {
-  return { priceConfigMode: 'discount' as ChannelPriceConfigMode, effectiveDate: dayjs() };
+  return {
+    priceConfigMode: 'discount' as ChannelPriceConfigMode,
+    effectiveDate: dayjs(),
+    discountByRange: false
+  };
 }
 
 function createDefaultChannelPriceUpdateEntry() {
-  return { priceConfigMode: 'discount' as ChannelPriceConfigMode, effectiveDate: dayjs().add(1, 'hour') };
+  return {
+    priceConfigMode: 'discount' as ChannelPriceConfigMode,
+    effectiveDate: dayjs().add(1, 'hour'),
+    discountByRange: false
+  };
+}
+
+function createDefaultPromptPriceGroup(): PromptPriceGroup {
+  return { rangeMin: 0, rangeMax: 128 };
+}
+
+function formatKTokenLabel(value: number): string {
+  if (value === 0) return '0';
+  return `${value}k`;
+}
+
+/** 展示为 (下限, 上限]，上限包含 */
+function formatInputRange(group: Pick<PromptPriceGroup, 'rangeMin' | 'rangeMax'>): string {
+  return `(${formatKTokenLabel(group.rangeMin)}, ${formatKTokenLabel(group.rangeMax)}]`;
+}
+
+function buildOfficialInputRangeOptions(groups: PromptPriceGroup[]) {
+  return mergeOfficialInputRanges(groups).map((group) => ({
+    value: getPromptRangeKey(group),
+    label: formatInputRange(group),
+    rangeMin: group.rangeMin,
+    rangeMax: group.rangeMax
+  }));
+}
+
+function createDefaultChannelTierPriceGroup(officialRanges: PromptPriceGroup[]) {
+  const first = mergeOfficialInputRanges(officialRanges)[0];
+  if (!first) return {};
+  return {
+    rangeKey: getPromptRangeKey(first),
+    rangeMin: first.rangeMin,
+    rangeMax: first.rangeMax
+  };
+}
+
+function isValidPromptPriceGroup(group: PromptPriceGroup): boolean {
+  return typeof group.rangeMin === 'number'
+    && typeof group.rangeMax === 'number'
+    && !Number.isNaN(group.rangeMin)
+    && !Number.isNaN(group.rangeMax)
+    && group.rangeMax > group.rangeMin;
+}
+
+function roundPromptPriceGroup(group: PromptPriceGroup): PromptPriceGroup {
+  const result: PromptPriceGroup = {
+    rangeMin: group.rangeMin,
+    rangeMax: group.rangeMax
+  };
+  if (typeof group.perCallPrice === 'number' && !Number.isNaN(group.perCallPrice)) {
+    result.perCallPrice = roundUnitPrice(group.perCallPrice);
+  }
+  for (const { name } of OFFICIAL_PRICE_FIELDS) {
+    const val = group[name as keyof PromptPriceGroup];
+    if (typeof val === 'number' && !Number.isNaN(val)) {
+      (result as Record<string, number>)[name] = roundUnitPrice(val);
+    }
+  }
+  return result;
+}
+
+function getOfficialPromptGroups(values: Record<string, unknown>): PromptPriceGroup[] {
+  const groups = values.promptPriceGroups as PromptPriceGroup[] | undefined;
+  if (!groups?.length) return [];
+  return groups.filter(isValidPromptPriceGroup).map(roundPromptPriceGroup);
+}
+
+function clearFlatOfficialPrices(): Partial<ModelPricingItem> {
+  return {
+    perCallPrice: undefined,
+    inputPrice: undefined,
+    completionPrice: undefined,
+    cacheWritePrice: undefined,
+    cacheReadPrice: undefined,
+    imageInputPrice: undefined,
+    imageOutputPrice: undefined,
+    imageCacheReadPrice: undefined,
+    audioInputPrice: undefined,
+    audioOutputPrice: undefined,
+    videoOutputPrice: undefined
+  };
 }
 
 function hasActiveChannelPrice(channelId: string, channelPrices: ChannelPriceItem[]) {
@@ -135,12 +229,16 @@ function hasActiveChannelPrice(channelId: string, channelPrices: ChannelPriceIte
   );
 }
 
+type ChannelTierPriceFormGroup = PromptPriceGroup & { rangeKey?: string };
+
 type ChannelPriceFormItem = {
   channelId?: string;
   priceConfigMode?: ChannelPriceConfigMode;
   discountRate?: number;
+  discountByRange?: boolean;
   perCallPrice?: number;
   effectiveDate?: Dayjs | string;
+  promptPriceGroups?: ChannelTierPriceFormGroup[];
 } & Partial<Record<keyof ModelPricingItem, number | undefined>>;
 
 function applyDiscountToChannelPrices(
@@ -162,22 +260,119 @@ function applyDiscountToChannelPrices(
   return result;
 }
 
+function applyDiscountToPromptGroups(
+  groups: PromptPriceGroup[],
+  billingMode: 'token' | 'count',
+  discountRate: number
+): PromptPriceGroup[] {
+  return groups.map((group) => ({
+    rangeMin: group.rangeMin,
+    rangeMax: group.rangeMax,
+    ...applyDiscountToChannelPrices(group, billingMode, discountRate)
+  }));
+}
+
+function findOfficialGroupByRange(
+  officialGroups: PromptPriceGroup[],
+  range: Pick<ChannelTierPriceFormGroup, 'rangeMin' | 'rangeMax' | 'rangeKey'>
+): PromptPriceGroup | undefined {
+  if (range.rangeKey) {
+    return officialGroups.find((group) => getPromptRangeKey(group) === range.rangeKey);
+  }
+  return officialGroups.find(
+    (group) => group.rangeMin === range.rangeMin && group.rangeMax === range.rangeMax
+  );
+}
+
+function buildTierDiscountGroupsFromForm(
+  formGroups: ChannelTierPriceFormGroup[] | undefined,
+  officialGroups: PromptPriceGroup[],
+  billingMode: 'token' | 'count'
+): PromptPriceGroup[] {
+  return (formGroups ?? [])
+    .map((row) => {
+      const officialGroup = findOfficialGroupByRange(officialGroups, row);
+      if (!officialGroup || row.discountRate == null || Number.isNaN(row.discountRate)) return undefined;
+      const discounted = applyDiscountToPromptGroups([officialGroup], billingMode, row.discountRate)[0];
+      return {
+        ...discounted,
+        discountRate: roundDiscountRate(row.discountRate)
+      };
+    })
+    .filter((group): group is PromptPriceGroup => !!group);
+}
+
+function renderTierChannelPricePreview(
+  group: PromptPriceGroup,
+  billingMode: 'token' | 'count',
+  extra?: string
+) {
+  return (
+    <FormRow>
+      {billingMode === 'count' ? (
+        <FormCol>
+          <Form.Item label="每次价格（CNY）" extra={extra}>
+            <InputNumber {...priceInputProps} value={group.perCallPrice} disabled placeholder="—" />
+          </Form.Item>
+        </FormCol>
+      ) : (
+        OFFICIAL_PRICE_FIELDS.map(({ name, label, unit }) => {
+          const value = group[name as keyof PromptPriceGroup];
+          if (typeof value !== 'number' || Number.isNaN(value)) return null;
+          return (
+            <FormCol key={String(name)}>
+              <Form.Item label={unit ? `${label} (${unit})` : label} extra={extra}>
+                <InputNumber {...priceInputProps} value={value} disabled placeholder="—" />
+              </Form.Item>
+            </FormCol>
+          );
+        })
+      )}
+    </FormRow>
+  );
+}
+
 function buildChannelPriceRecord(
   item: ChannelPriceFormItem,
   official: Partial<ModelPricingItem>,
   billingMode: 'token' | 'count',
-  effectiveDate: string
+  effectiveDate: string,
+  tierPricing = false
 ): ChannelPriceItem {
   const channel = mockChannels.find((c) => c.id === item.channelId);
   const mode: ChannelPriceConfigMode = item.priceConfigMode ?? 'custom';
+  const discountByRange = mode === 'discount' && item.discountByRange === true;
   const base: ChannelPriceItem = {
     channelId: item.channelId!,
     channelName: channel?.name ?? '',
     priceConfigMode: mode,
-    discountRate: mode === 'discount' ? roundDiscountRate(item.discountRate ?? 0) : undefined,
+    discountByRange: mode === 'discount' ? discountByRange : undefined,
+    discountRate: mode === 'discount' && !discountByRange
+      ? roundDiscountRate(item.discountRate ?? 0)
+      : undefined,
     effectiveDate,
     updatedAt: formatNowDateTime()
   };
+
+  if (tierPricing) {
+    if (mode === 'discount') {
+      const officialGroups = official.promptPriceGroups ?? [];
+      if (discountByRange) {
+        return {
+          ...base,
+          promptPriceGroups: buildTierDiscountGroupsFromForm(item.promptPriceGroups, officialGroups, billingMode)
+        };
+      }
+      return {
+        ...base,
+        discountByRange: false,
+        promptPriceGroups: applyDiscountToPromptGroups(officialGroups, billingMode, item.discountRate ?? 0)
+      };
+    }
+    const groups = (item.promptPriceGroups ?? []).filter(isValidPromptPriceGroup).map(roundPromptPriceGroup);
+    return { ...base, promptPriceGroups: groups };
+  }
+
   if (mode === 'discount') {
     return { ...base, ...applyDiscountToChannelPrices(official, billingMode, item.discountRate ?? 0) };
   }
@@ -199,17 +394,346 @@ function buildChannelPricesFromForm(
   items: ChannelPriceFormItem[] | undefined,
   official: Partial<ModelPricingItem>,
   billingMode: 'token' | 'count',
-  existingChannelPrices: ChannelPriceItem[] = []
+  existingChannelPrices: ChannelPriceItem[] = [],
+  tierPricing = false
 ): ChannelPriceItem[] {
   if (!items?.length) return [...existingChannelPrices];
   let result = [...existingChannelPrices];
 
   for (const item of items.filter((row) => row.channelId)) {
     const formEffective = formatChannelDateTime(item.effectiveDate) ?? formatNowDateTime();
-    const record = buildChannelPriceRecord(item, official, billingMode, formEffective);
+    const record = buildChannelPriceRecord(item, official, billingMode, formEffective, tierPricing);
     result = mergeChannelPriceUpdates(result, [record]);
   }
   return result;
+}
+
+function PromptPriceGroupsEditor({
+  listName,
+  billingMode,
+  titlePrefix = '输入区间'
+}: {
+  listName: string | (string | number)[];
+  billingMode: 'token' | 'count';
+  titlePrefix?: string;
+}) {
+  const rangeInputProps = {
+    min: 0,
+    step: 1,
+    precision: 0,
+    style: { width: '100%' as const }
+  };
+
+  return (
+    <Form.List name={listName}>
+      {(fields, { add, remove }) => (
+        <>
+          {fields.map((field, index) => (
+            <div
+              key={field.key}
+              style={{ marginBottom: 16, padding: 16, border: '1px solid #f0f0f0', borderRadius: 8 }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Typography.Text strong>{titlePrefix} #{index + 1}</Typography.Text>
+                <Button type="link" danger size="small" onClick={() => remove(field.name)}>删除区间</Button>
+              </div>
+              <FormRow>
+                <FormCol>
+                  <Form.Item
+                    name={[field.name, 'rangeMin']}
+                    label="区间下限（K Tokens）"
+                    rules={[{ required: true, message: '请输入区间下限' }]}
+                    extra="必填；如 0 表示 0k"
+                  >
+                    <InputNumber {...rangeInputProps} placeholder="0" addonAfter="K" />
+                  </Form.Item>
+                </FormCol>
+                <FormCol>
+                  <Form.Item
+                    name={[field.name, 'rangeMax']}
+                    label="区间上限（K Tokens）"
+                    dependencies={[[...(Array.isArray(listName) ? listName : [listName]), field.name, 'rangeMin']]}
+                    rules={[
+                      { required: true, message: '请输入区间上限' },
+                      ({ getFieldValue }) => ({
+                        validator: async (_, value) => {
+                          const listPath = Array.isArray(listName) ? listName : [listName];
+                          const min = getFieldValue([...listPath, field.name, 'rangeMin']);
+                          if (value == null || min == null) return;
+                          if (value <= min) {
+                            throw new Error('区间上限须大于下限');
+                          }
+                        }
+                      })
+                    ]}
+                    extra="上限为包含关系，展示为 (下限, 上限]，如 (0, 128]"
+                  >
+                    <InputNumber {...rangeInputProps} placeholder="128" addonAfter="K" />
+                  </Form.Item>
+                </FormCol>
+              </FormRow>
+              {billingMode === 'count' ? (
+                <FormRow>
+                  <FormCol>
+                    <Form.Item
+                      name={[field.name, 'perCallPrice']}
+                      label="每次价格（CNY）"
+                      rules={[{ required: true, message: '请输入每次价格' }]}
+                      extra="单价保留 9 位小数"
+                    >
+                      <InputNumber {...priceInputProps} placeholder="0.000000000" />
+                    </Form.Item>
+                  </FormCol>
+                </FormRow>
+              ) : (
+                <FormRow>
+                  {OFFICIAL_PRICE_FIELDS.map(({ name, label, required, unit }) => (
+                    <FormCol key={String(name)}>
+                      <Form.Item
+                        name={[field.name, name]}
+                        label={unit ? `${label} (${unit})` : label}
+                        rules={required ? [{ required: true, message: `请输入${label}` }] : undefined}
+                      >
+                        <InputNumber {...priceInputProps} placeholder="0.000000000" />
+                      </Form.Item>
+                    </FormCol>
+                  ))}
+                </FormRow>
+              )}
+            </div>
+          ))}
+          <Button
+            type="dashed"
+            onClick={() => add(createDefaultPromptPriceGroup())}
+            block
+            icon={<PlusOutlined />}
+          >
+            添加输入区间
+          </Button>
+        </>
+      )}
+    </Form.List>
+  );
+}
+
+function ChannelInputRangePriceEditor({
+  listName,
+  listFieldName,
+  billingMode,
+  form,
+  officialRanges
+}: {
+  listName: 'channelPrices' | 'channelPriceUpdates' | 'priceMaintain' | 'channelTabEdit';
+  listFieldName: number;
+  billingMode: 'token' | 'count';
+  form: ReturnType<typeof Form.useForm>[0];
+  officialRanges: PromptPriceGroup[];
+}) {
+  const rangeOptions = useMemo(() => buildOfficialInputRangeOptions(officialRanges), [officialRanges]);
+
+  if (!rangeOptions.length) {
+    return (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        请先在官方价格中配置输入区间
+      </Typography.Text>
+    );
+  }
+
+  const handleRangeSelect = (fieldIndex: number, rangeKey: string) => {
+    const option = rangeOptions.find((item) => item.value === rangeKey);
+    if (!option) return;
+    form.setFields([
+      { name: [listName, listFieldName, 'promptPriceGroups', fieldIndex, 'rangeMin'], value: option.rangeMin },
+      { name: [listName, listFieldName, 'promptPriceGroups', fieldIndex, 'rangeMax'], value: option.rangeMax }
+    ]);
+  };
+
+  return (
+    <Form.List name={[listFieldName, 'promptPriceGroups']}>
+      {(fields, { add, remove }) => (
+        <>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+            自定义模式下按官方已配置的输入区间分别维护渠道价；区间从下拉选择，范围为官方价格中的各区间段。
+          </Typography.Paragraph>
+          {fields.map((field, index) => (
+            <div
+              key={field.key}
+              style={{ marginBottom: 16, padding: 16, border: '1px dashed #e8e8e8', borderRadius: 8 }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Typography.Text strong>输入区间 #{index + 1}</Typography.Text>
+                <Button type="link" danger size="small" onClick={() => remove(field.name)}>删除</Button>
+              </div>
+              <FormRow>
+                <FormCol>
+                  <Form.Item
+                    name={[field.name, 'rangeKey']}
+                    label="输入区间"
+                    rules={[{ required: true, message: '请选择输入区间' }]}
+                  >
+                    <Select
+                      placeholder="请选择官方输入区间"
+                      options={rangeOptions}
+                      onChange={(rangeKey) => handleRangeSelect(field.name, rangeKey)}
+                    />
+                  </Form.Item>
+                </FormCol>
+              </FormRow>
+              <Form.Item name={[field.name, 'rangeMin']} hidden />
+              <Form.Item name={[field.name, 'rangeMax']} hidden />
+              {billingMode === 'count' ? (
+                <FormRow>
+                  <FormCol>
+                    <Form.Item
+                      name={[field.name, 'perCallPrice']}
+                      label="每次价格（CNY）"
+                      rules={[{ required: true, message: '请输入每次价格' }]}
+                      extra="单价保留 9 位小数"
+                    >
+                      <InputNumber {...priceInputProps} placeholder="0.000000000" />
+                    </Form.Item>
+                  </FormCol>
+                </FormRow>
+              ) : (
+                <FormRow>
+                  {OFFICIAL_PRICE_FIELDS.map(({ name, label, required, unit }) => (
+                    <FormCol key={String(name)}>
+                      <Form.Item
+                        name={[field.name, name]}
+                        label={unit ? `${label} (${unit})` : label}
+                        rules={required ? [{ required: true, message: `请输入${label}` }] : undefined}
+                      >
+                        <InputNumber {...priceInputProps} placeholder="0.000000000" />
+                      </Form.Item>
+                    </FormCol>
+                  ))}
+                </FormRow>
+              )}
+            </div>
+          ))}
+          <Button
+            type="dashed"
+            onClick={() => add(createDefaultChannelTierPriceGroup(officialRanges))}
+            block
+            icon={<PlusOutlined />}
+          >
+            添加输入区间价格
+          </Button>
+        </>
+      )}
+    </Form.List>
+  );
+}
+
+function createDefaultChannelTierDiscountGroup(officialRanges: PromptPriceGroup[]) {
+  return {
+    ...createDefaultChannelTierPriceGroup(officialRanges),
+    discountRate: undefined
+  };
+}
+
+function ChannelTierDiscountByRangeEditor({
+  listName,
+  listFieldName,
+  billingMode,
+  form,
+  officialRanges
+}: {
+  listName: 'channelPrices' | 'channelPriceUpdates' | 'priceMaintain' | 'channelTabEdit';
+  listFieldName: number;
+  billingMode: 'token' | 'count';
+  form: ReturnType<typeof Form.useForm>[0];
+  officialRanges: PromptPriceGroup[];
+}) {
+  const rangeOptions = useMemo(() => buildOfficialInputRangeOptions(officialRanges), [officialRanges]);
+  const tierDiscountWatch = Form.useWatch([listName, listFieldName, 'promptPriceGroups'], form) as ChannelTierPriceFormGroup[] | undefined;
+
+  if (!rangeOptions.length) {
+    return (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        请先在官方价格中配置输入区间
+      </Typography.Text>
+    );
+  }
+
+  const handleRangeSelect = (fieldIndex: number, rangeKey: string) => {
+    const option = rangeOptions.find((item) => item.value === rangeKey);
+    if (!option) return;
+    form.setFields([
+      { name: [listName, listFieldName, 'promptPriceGroups', fieldIndex, 'rangeMin'], value: option.rangeMin },
+      { name: [listName, listFieldName, 'promptPriceGroups', fieldIndex, 'rangeMax'], value: option.rangeMax }
+    ]);
+  };
+
+  return (
+    <Form.List name={[listFieldName, 'promptPriceGroups']}>
+      {(fields, { add, remove }) => (
+        <>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+            按输入区间分别维护折扣系数；保存后仅覆盖所选区间，未选区间仍沿用此前全区间折扣价格。
+          </Typography.Paragraph>
+          {fields.map((field, index) => {
+            const rowValues = tierDiscountWatch?.[field.name];
+            const previewGroup = rowValues?.rangeKey && rowValues.discountRate != null && !Number.isNaN(rowValues.discountRate)
+              ? (() => {
+                const officialGroup = findOfficialGroupByRange(officialRanges, rowValues);
+                if (!officialGroup) return null;
+                return applyDiscountToPromptGroups([officialGroup], billingMode, rowValues.discountRate)[0];
+              })()
+              : null;
+
+            return (
+              <div
+                key={field.key}
+                style={{ marginBottom: 16, padding: 16, border: '1px dashed #e8e8e8', borderRadius: 8 }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <Typography.Text strong>输入区间 #{index + 1}</Typography.Text>
+                  <Button type="link" danger size="small" onClick={() => remove(field.name)}>删除</Button>
+                </div>
+                <FormRow>
+                  <FormCol>
+                    <Form.Item
+                      name={[field.name, 'rangeKey']}
+                      label="输入区间"
+                      rules={[{ required: true, message: '请选择输入区间' }]}
+                    >
+                      <Select
+                        placeholder="请选择官方输入区间"
+                        options={rangeOptions}
+                        onChange={(rangeKey) => handleRangeSelect(field.name, rangeKey)}
+                      />
+                    </Form.Item>
+                  </FormCol>
+                  <FormCol>
+                    <Form.Item
+                      name={[field.name, 'discountRate']}
+                      label="折扣系数"
+                      rules={[{ required: true, message: '请输入折扣系数' }]}
+                      extra={`保留 ${DISCOUNT_RATE_DECIMALS} 位小数`}
+                    >
+                      <InputNumber {...discountInputProps} placeholder="0.889" />
+                    </Form.Item>
+                  </FormCol>
+                </FormRow>
+                <Form.Item name={[field.name, 'rangeMin']} hidden />
+                <Form.Item name={[field.name, 'rangeMax']} hidden />
+                {previewGroup ? renderTierChannelPricePreview(previewGroup, billingMode, '官方价 × 折扣系数') : null}
+              </div>
+            );
+          })}
+          <Button
+            type="dashed"
+            onClick={() => add(createDefaultChannelTierDiscountGroup(officialRanges))}
+            block
+            icon={<PlusOutlined />}
+          >
+            添加输入区间折扣
+          </Button>
+        </>
+      )}
+    </Form.List>
+  );
 }
 
 function ChannelPriceEntry({
@@ -222,6 +746,7 @@ function ChannelPriceEntry({
   hideRemove = false,
   channelIdDisabled = false,
   officialPriceSource,
+  enableTierPromptPricing = false,
   onRemove
 }: {
   listField: { key: React.Key; name: number };
@@ -233,6 +758,7 @@ function ChannelPriceEntry({
   hideRemove?: boolean;
   channelIdDisabled?: boolean;
   officialPriceSource?: ModelPricingItem;
+  enableTierPromptPricing?: boolean;
   onRemove: () => void;
 }) {
   const formValues = Form.useWatch([], form);
@@ -240,6 +766,9 @@ function ChannelPriceEntry({
   const selectedChannelId = Form.useWatch([listName, listField.name, 'channelId'], form) as string | undefined;
   const priceConfigMode = (Form.useWatch([listName, listField.name, 'priceConfigMode'], form) as ChannelPriceConfigMode | undefined) ?? 'discount';
   const discountRate = Form.useWatch([listName, listField.name, 'discountRate'], form) as number | undefined;
+  const formTierPricing = Form.useWatch('tierPricing', form) as boolean | undefined;
+  const tierPricingActive = enableTierPromptPricing && (officialPriceSource?.tierPricing || formTierPricing === true);
+  const discountByRange = Form.useWatch([listName, listField.name, 'discountByRange'], form) === true;
 
   const channelPriceContext = useMemo(() => {
     let context = [...existingChannelPrices];
@@ -285,6 +814,20 @@ function ChannelPriceEntry({
     }
     return applyDiscountToChannelPrices(official, billingMode, discountRate);
   }, [priceConfigMode, discountRate, official, billingMode]);
+
+  const officialPromptGroups = useMemo(() => {
+    if (!tierPricingActive) return [] as PromptPriceGroup[];
+    if (officialPriceSource?.promptPriceGroups?.length) {
+      return officialPriceSource.promptPriceGroups;
+    }
+    return getOfficialPromptGroups(formValues ?? {});
+  }, [tierPricingActive, officialPriceSource, formValues]);
+
+  const computedPromptGroups = useMemo(() => {
+    if (priceConfigMode !== 'discount' || !tierPricingActive || discountByRange) return [] as PromptPriceGroup[];
+    if (discountRate == null || Number.isNaN(discountRate)) return [] as PromptPriceGroup[];
+    return applyDiscountToPromptGroups(officialPromptGroups, billingMode, discountRate);
+  }, [priceConfigMode, tierPricingActive, discountByRange, discountRate, officialPromptGroups, billingMode]);
 
   return (
     <div className="channel-price-entry" style={{ marginBottom: 16, padding: 16, border: '1px solid #f0f0f0', borderRadius: 8 }}>
@@ -370,7 +913,25 @@ function ChannelPriceEntry({
         </FormCol>
       </FormRow>
 
-      {priceConfigMode === 'discount' ? (
+      {priceConfigMode === 'discount' && tierPricingActive ? (
+        <FormRow>
+          <FormCol>
+            <Form.Item
+              name={[listField.name, 'discountByRange']}
+              label="是否根据区间配置"
+              initialValue={false}
+              rules={[{ required: true }]}
+            >
+              <Radio.Group>
+                <Radio value={false}>否</Radio>
+                <Radio value={true}>是</Radio>
+              </Radio.Group>
+            </Form.Item>
+          </FormCol>
+        </FormRow>
+      ) : null}
+
+      {priceConfigMode === 'discount' && (!tierPricingActive || !discountByRange) ? (
         <FormRow>
           <FormCol>
             <Form.Item
@@ -385,7 +946,46 @@ function ChannelPriceEntry({
         </FormRow>
       ) : null}
 
-      {billingMode === 'count' ? (
+      {tierPricingActive ? (
+        priceConfigMode === 'discount' ? (
+          discountByRange ? (
+            <ChannelTierDiscountByRangeEditor
+              listName={listName}
+              listFieldName={listField.name}
+              billingMode={billingMode}
+              form={form}
+              officialRanges={officialPromptGroups}
+            />
+          ) : (
+          <div>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+              全区间统一折扣：按官方各输入区间 × 同一折扣系数自动计算，保存后按区间数量展示渠道价格
+            </Typography.Paragraph>
+            {computedPromptGroups.length ? computedPromptGroups.map((group, idx) => (
+              <div
+                key={getPromptRangeKey(group) || idx}
+                style={{ marginBottom: 12, padding: 12, background: '#fafafa', borderRadius: 6 }}
+              >
+                <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+                  输入区间：{formatInputRange(group)}
+                </Typography.Text>
+                {renderTierChannelPricePreview(group, billingMode, '官方价 × 折扣系数')}
+              </div>
+            )) : (
+              <Typography.Text type="secondary">请先在官方价格中配置输入区间</Typography.Text>
+            )}
+          </div>
+          )
+        ) : (
+          <ChannelInputRangePriceEditor
+            listName={listName}
+            listFieldName={listField.name}
+            billingMode={billingMode}
+            form={form}
+            officialRanges={officialPromptGroups}
+          />
+        )
+      ) : billingMode === 'count' ? (
         <FormRow>
           <FormCol>
             {priceConfigMode === 'discount' ? (
@@ -461,8 +1061,9 @@ function formatPriceCell(value?: number) {
 
 function formatPriceConfigLabel(item: ChannelPriceItem) {
   if (item.priceConfigMode === 'discount') {
+    if (item.discountByRange) return '按区间折扣';
     const rate = item.discountRate != null ? `（${item.discountRate}）` : '';
-    return `折扣${rate}`;
+    return `全区间折扣${rate}`;
   }
   return '自定义';
 }
@@ -488,6 +1089,24 @@ function formatEffectiveDateCell(value?: string) {
 }
 
 function formatChannelPriceSummary(row: ChannelPriceRow) {
+  if (row.promptPriceGroups?.length) {
+    return (
+      <Space direction="vertical" size={2}>
+        {row.promptPriceGroups.map((group) => (
+          <Typography.Text key={getPromptRangeKey(group)} type="secondary" style={{ fontSize: 12 }}>
+            {formatInputRange(group)}
+            {' · '}
+            {row.billingMode === 'count' ? (
+              <>每次 {formatUnitPrice(group.perCallPrice ?? 0)}</>
+            ) : (
+              <>输入 {formatUnitPrice(group.inputPrice ?? 0)} / 输出 {formatUnitPrice(group.completionPrice ?? 0)}</>
+            )}
+          </Typography.Text>
+        ))}
+      </Space>
+    );
+  }
+
   if (row.billingMode === 'count') {
     return (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -502,10 +1121,54 @@ function formatChannelPriceSummary(row: ChannelPriceRow) {
   );
 }
 
+function renderOfficialPriceSummary(model: ModelPricingItem) {
+  if (model.tierPricing && model.promptPriceGroups?.length) {
+    return (
+      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+        {model.promptPriceGroups.map((group) => (
+          <Typography.Text
+            key={getPromptRangeKey(group)}
+            type="secondary"
+            style={{ fontSize: 12, lineHeight: '20px' }}
+          >
+            {formatInputRange(group)}
+            {' · '}
+            {model.billingMode === 'count' ? (
+              <>每次 {formatUnitPrice(group.perCallPrice ?? 0)}</>
+            ) : (
+              <>输入 {formatUnitPrice(group.inputPrice ?? 0)} / 输出 {formatUnitPrice(group.completionPrice ?? 0)}</>
+            )}
+          </Typography.Text>
+        ))}
+      </Space>
+    );
+  }
+
+  if (model.billingMode === 'count') {
+    return (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {formatUnitPrice(model.perCallPrice ?? 0)} / 次
+      </Typography.Text>
+    );
+  }
+
+  return (
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      输入 {formatUnitPrice(model.inputPrice ?? 0)} / 输出 {formatUnitPrice(model.completionPrice ?? 0)} (CNY / 1M Tokens)
+    </Typography.Text>
+  );
+}
+
 function channelItemToFormItem(item: ChannelPriceItem): ChannelPriceFormItem {
   return {
     ...item,
-    effectiveDate: item.effectiveDate ? dayjs(item.effectiveDate) : dayjs()
+    effectiveDate: item.effectiveDate ? dayjs(item.effectiveDate) : dayjs(),
+    discountByRange: item.discountByRange ?? false,
+    promptPriceGroups: item.promptPriceGroups?.map((group) => ({
+      ...group,
+      rangeKey: getPromptRangeKey(group),
+      discountRate: group.discountRate ?? item.discountRate
+    }))
   };
 }
 
@@ -773,6 +1436,63 @@ function ChannelPriceFullReadOnly({
   billingMode: 'token' | 'count';
   channelPrices: ChannelPriceItem[];
 }) {
+  if (item.promptPriceGroups?.length) {
+    return (
+      <div>
+        <Descriptions column={2} size="small" bordered className="channel-price-detail-readonly">
+          <Descriptions.Item label="渠道来源">{item.channelName}</Descriptions.Item>
+          <Descriptions.Item label="状态">
+            {renderChannelPriceStatus(item, channelPrices)}
+          </Descriptions.Item>
+          <Descriptions.Item label="价格配置">{formatPriceConfigLabel(item)}</Descriptions.Item>
+          <Descriptions.Item label="是否按区间配置">
+            {item.priceConfigMode === 'discount' ? (item.discountByRange ? '是' : '否') : '—'}
+          </Descriptions.Item>
+          <Descriptions.Item label="生效日期">{formatEffectiveDateCell(item.effectiveDate)}</Descriptions.Item>
+        </Descriptions>
+        {item.promptPriceGroups.map((group) => {
+          const superseded = isTierRangeSuperseded(item, group, channelPrices);
+          return (
+          <Descriptions
+            key={getPromptRangeKey(group)}
+            column={2}
+            size="small"
+            bordered
+            title={(
+              <Space size={8}>
+                <span>{`输入区间：${formatInputRange(group)}`}</span>
+                {superseded ? <Tag color="default">区间已失效</Tag> : null}
+              </Space>
+            )}
+            style={{ marginTop: 12 }}
+          >
+            {item.discountByRange && group.discountRate != null ? (
+              <Descriptions.Item label="折扣系数" span={2}>
+                {group.discountRate}
+              </Descriptions.Item>
+            ) : null}
+            {billingMode === 'count' ? (
+              <Descriptions.Item label="每次价格（CNY）" span={2}>
+                {formatUnitPrice(group.perCallPrice ?? 0)}
+              </Descriptions.Item>
+            ) : (
+              OFFICIAL_PRICE_FIELDS.map(({ name, label }) => {
+                const value = group[name as keyof PromptPriceGroup];
+                if (typeof value !== 'number' || Number.isNaN(value)) return null;
+                return (
+                  <Descriptions.Item key={String(name)} label={label}>
+                    {formatUnitPrice(value)}
+                  </Descriptions.Item>
+                );
+              })
+            )}
+          </Descriptions>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <Descriptions column={2} size="small" bordered className="channel-price-detail-readonly">
       <Descriptions.Item label="渠道来源">{item.channelName}</Descriptions.Item>
@@ -801,6 +1521,39 @@ function ChannelPriceFullReadOnly({
 }
 
 function OfficialPriceReadOnly({ model }: { model: ModelPricingItem }) {
+  if (model.tierPricing && model.promptPriceGroups?.length) {
+    return (
+      <div className="official-price-readonly-tier">
+        {model.promptPriceGroups.map((group) => (
+          <Descriptions
+            key={getPromptRangeKey(group)}
+            column={2}
+            size="small"
+            bordered
+            title={`输入区间：${formatInputRange(group)}`}
+            style={{ marginBottom: 12 }}
+          >
+            {model.billingMode === 'count' ? (
+              <Descriptions.Item label="每次价格（CNY）" span={2}>
+                {formatUnitPrice(group.perCallPrice ?? 0)}
+              </Descriptions.Item>
+            ) : (
+              OFFICIAL_PRICE_FIELDS.map(({ name, label }) => {
+                const value = group[name as keyof PromptPriceGroup];
+                if (value == null || Number.isNaN(value)) return null;
+                return (
+                  <Descriptions.Item key={String(name)} label={label}>
+                    {formatUnitPrice(value as number)}
+                  </Descriptions.Item>
+                );
+              })
+            )}
+          </Descriptions>
+        ))}
+      </div>
+    );
+  }
+
   if (model.billingMode === 'count') {
     return (
       <Descriptions column={1} size="small" bordered className="official-price-readonly">
@@ -868,6 +1621,51 @@ function ChannelPriceStatusReference({
         variant="compact"
         emptyText="该渠道暂无价格记录，保存后将新增"
       />
+    </div>
+  );
+}
+
+function EffectiveChannelTierPricesPanel({
+  channelId,
+  channelPrices,
+  officialRanges,
+  billingMode
+}: {
+  channelId?: string;
+  channelPrices: ChannelPriceItem[];
+  officialRanges: PromptPriceGroup[];
+  billingMode: 'token' | 'count';
+}) {
+  const effectiveGroups = useMemo(() => {
+    if (!channelId || !officialRanges.length) return [];
+    return resolveEffectiveTierChannelPrices(channelPrices, channelId, officialRanges);
+  }, [channelId, channelPrices, officialRanges]);
+
+  if (!channelId || !officialRanges.length) return null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+        当前生效渠道价格（按输入区间合并）
+      </Typography.Text>
+      {effectiveGroups.length ? (
+        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+          {effectiveGroups.map((group) => (
+            <Typography.Text key={getPromptRangeKey(group)} type="secondary" style={{ fontSize: 12 }}>
+              {formatInputRange(group)}
+              {' · '}
+              {billingMode === 'count' ? (
+                <>每次 {formatUnitPrice(group.perCallPrice ?? 0)}</>
+              ) : (
+                <>输入 {formatUnitPrice(group.inputPrice ?? 0)} / 输出 {formatUnitPrice(group.completionPrice ?? 0)}</>
+              )}
+              {group.discountRate != null ? ` · 折扣 ${group.discountRate}` : ''}
+            </Typography.Text>
+          ))}
+        </Space>
+      ) : (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无生效中的区间价格</Typography.Text>
+      )}
     </div>
   );
 }
@@ -941,8 +1739,12 @@ function ChannelPriceViewTable({
 
 function getOfficialPrices(
   values: Record<string, unknown>,
-  billingMode: 'token' | 'count'
+  billingMode: 'token' | 'count',
+  tierPricing = false
 ): Partial<ModelPricingItem> {
+  if (tierPricing) {
+    return { promptPriceGroups: getOfficialPromptGroups(values) };
+  }
   if (billingMode === 'count') {
     const v = values.perCallPrice;
     return typeof v === 'number' && !Number.isNaN(v) ? { perCallPrice: v } : {};
@@ -957,8 +1759,20 @@ function getOfficialPrices(
   return official;
 }
 
-export default function ModelPricingPage() {
-  const [models, setModels] = useState(mockModels);
+export type ModelPricingPageProps = {
+  pageTitle?: string;
+  pageDescription?: string;
+  enableTierPromptPricing?: boolean;
+  initialModels?: ModelPricingItem[];
+};
+
+export function ModelPricingPage({
+  pageTitle = '模型定价管理',
+  pageDescription = '渠道价格更新采用待生效排期：同模型同渠道仅一条待生效，到达生效日后切换为最新价并用于用量统计。',
+  enableTierPromptPricing = false,
+  initialModels = mockModels
+}: ModelPricingPageProps) {
+  const [models, setModels] = useState(initialModels);
   const [activeTab, setActiveTab] = useState('official');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maintainDrawerOpen, setMaintainDrawerOpen] = useState(false);
@@ -977,6 +1791,7 @@ export default function ModelPricingPage() {
   const [maintainForm] = Form.useForm();
   const [channelEditForm] = Form.useForm();
   const billingMode = (Form.useWatch('billingMode', form) as 'token' | 'count' | undefined) ?? 'token';
+  const tierPricingForm = enableTierPromptPricing && ((Form.useWatch('tierPricing', form) as boolean | undefined) ?? false);
   const maintainSelectedChannelId = Form.useWatch(['priceMaintain', 0, 'channelId'], maintainForm) as string | undefined;
   const channelEditSelectedChannelId = Form.useWatch(['channelTabEdit', 0, 'channelId'], channelEditForm) as string | undefined;
 
@@ -1046,7 +1861,12 @@ export default function ModelPricingPage() {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ billingMode: 'token', tierPricing: false, channelPrices: [] });
+    form.setFieldsValue({
+      billingMode: 'token',
+      tierPricing: false,
+      channelPrices: [],
+      promptPriceGroups: enableTierPromptPricing ? [] : undefined
+    });
     setDrawerOpen(true);
   };
 
@@ -1091,24 +1911,47 @@ export default function ModelPricingPage() {
   const handleSave = async () => {
     const values = await form.validateFields();
     const mode: 'token' | 'count' = values.billingMode ?? 'token';
-    const official = getOfficialPrices(values, mode);
+    const tierActive = enableTierPromptPricing && (values.tierPricing ?? false);
+    let official: Partial<ModelPricingItem>;
+    let payload: Record<string, unknown>;
+
+    if (tierActive) {
+      const promptPriceGroups = getOfficialPromptGroups(values);
+      if (!promptPriceGroups.length) {
+        message.error('阶梯价格须至少配置一个输入区间');
+        return;
+      }
+      official = { promptPriceGroups };
+      payload = {
+        ...values,
+        ...clearFlatOfficialPrices(),
+        tierPricing: true,
+        promptPriceGroups
+      };
+    } else {
+      official = getOfficialPrices(values, mode);
+      payload = {
+        ...values,
+        ...official,
+        tierPricing: false,
+        promptPriceGroups: undefined
+      };
+    }
+
     const channelPrices = editing
       ? (editing.channelPrices ?? [])
       : buildChannelPricesFromForm(
         values.channelPrices as ChannelPriceFormItem[] | undefined,
         official,
         mode,
-        []
+        [],
+        tierActive
       );
-    const payload = {
-      ...values,
-      ...official,
-      channelPrices,
-      tierPricing: values.tierPricing ?? false
-    };
+    payload.channelPrices = channelPrices;
+
     const now = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
     if (editing) {
-      setModels((prev) => prev.map((m) => (m.id === editing.id ? { ...m, ...payload, updatedAt: now } : m)));
+      setModels((prev) => prev.map((m) => (m.id === editing.id ? { ...m, ...payload, updatedAt: now } as ModelPricingItem : m)));
       message.success('官方价格已更新');
     } else {
       const pendingError = validateSinglePendingPerChannel(channelPrices);
@@ -1116,7 +1959,7 @@ export default function ModelPricingPage() {
         message.error(pendingError);
         return;
       }
-      setModels((prev) => [...prev, { id: `m${Date.now()}`, updatedAt: now, ...payload }]);
+      setModels((prev) => [...prev, { id: `m${Date.now()}`, updatedAt: now, ...payload } as ModelPricingItem]);
       if (channelPrices.length > 0) {
         message.success(`模型已创建，${channelPrices.length} 条渠道价格已同步至「渠道价格管理」`);
       } else {
@@ -1139,12 +1982,16 @@ export default function ModelPricingPage() {
         message.info('该渠道已有待生效价格，保存后将替换原记录');
       }
     }
-    const official = getOfficialPrices(maintaining, maintaining.billingMode);
+    const tierActive = maintaining.tierPricing === true;
+    const official = tierActive
+      ? { promptPriceGroups: maintaining.promptPriceGroups ?? [] }
+      : getOfficialPrices(maintaining, maintaining.billingMode);
     const channelPrices = buildChannelPricesFromForm(
       items,
       official,
       maintaining.billingMode,
-      maintaining.channelPrices ?? []
+      maintaining.channelPrices ?? [],
+      tierActive
     );
     const pendingError = validateSinglePendingPerChannel(channelPrices);
     if (pendingError) {
@@ -1177,12 +2024,16 @@ export default function ModelPricingPage() {
       return;
     }
 
-    const official = getOfficialPrices(channelEditModel, channelEditModel.billingMode);
+    const tierActive = channelEditModel.tierPricing === true;
+    const official = tierActive
+      ? { promptPriceGroups: channelEditModel.promptPriceGroups ?? [] }
+      : getOfficialPrices(channelEditModel, channelEditModel.billingMode);
     const record = buildChannelPriceRecord(
       item,
       official,
       channelEditModel.billingMode,
-      effective
+      effective,
+      tierActive
     );
 
     const otherPending = (channelEditModel.channelPrices ?? []).filter(
@@ -1247,17 +2098,8 @@ export default function ModelPricingPage() {
     },
     {
       title: '官方价格摘要',
-      width: 280,
-      render: (_, r) =>
-        r.billingMode === 'count' ? (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {formatUnitPrice(r.perCallPrice ?? 0)} / 次
-          </Typography.Text>
-        ) : (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            输入 {formatUnitPrice(r.inputPrice ?? 0)} / 输出 {formatUnitPrice(r.completionPrice ?? 0)} (CNY / 1M Tokens)
-          </Typography.Text>
-        )
+      width: 360,
+      render: (_, r) => renderOfficialPriceSummary(r)
     },
     {
       title: '渠道商数量',
@@ -1291,8 +2133,8 @@ export default function ModelPricingPage() {
   return (
     <div>
       <PageHeader
-        title="模型定价管理"
-        description="渠道价格更新采用待生效排期：同模型同渠道仅一条待生效，到达生效日后切换为最新价并用于用量统计。"
+        title={pageTitle}
+        description={pageDescription}
         extra={
           activeTab === 'official' ? (
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
@@ -1332,7 +2174,7 @@ export default function ModelPricingPage() {
                     rowKey="id"
                     columns={officialColumns}
                     dataSource={filteredModels}
-                    scroll={{ x: 1300 }}
+                    scroll={{ x: 1380 }}
                     pagination={TABLE_LIST_PAGINATION}
                     size="middle"
                   />
@@ -1435,7 +2277,11 @@ export default function ModelPricingPage() {
                 <Form.Item name="tierPricing" label="阶梯价格">
                   <Radio.Group>
                     <Radio value={false}>否</Radio>
-                    <Radio value={true} disabled>是（后续设计）</Radio>
+                    {enableTierPromptPricing ? (
+                      <Radio value={true}>是</Radio>
+                    ) : (
+                      <Radio value={true} disabled>是（后续设计）</Radio>
+                    )}
                   </Radio.Group>
                 </Form.Item>
               </FormCol>
@@ -1452,7 +2298,14 @@ export default function ModelPricingPage() {
                 : '官方价格管理（CNY / 1M Tokens）'
             }
           >
-            {billingMode === 'count' ? (
+            {tierPricingForm ? (
+              <>
+                <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+                  按输入区间（单位 K Tokens，展示为 (下限, 上限]，如 (0, 128]）维护官方单价；渠道自定义价格从官方区间下拉选择。
+                </Typography.Paragraph>
+                <PromptPriceGroupsEditor listName="promptPriceGroups" billingMode={billingMode} />
+              </>
+            ) : billingMode === 'count' ? (
               <FormRow>
                 <FormCol>
                   <Form.Item
@@ -1498,6 +2351,7 @@ export default function ModelPricingPage() {
                         billingMode={billingMode}
                         form={form}
                         existingChannelPrices={[]}
+                        enableTierPromptPricing={enableTierPromptPricing}
                         onRemove={() => remove(field.name)}
                       />
                     ))}
@@ -1573,6 +2427,8 @@ export default function ModelPricingPage() {
                           billingMode={maintaining.billingMode}
                           form={maintainForm}
                           existingChannelPrices={maintaining.channelPrices ?? []}
+                          officialPriceSource={maintaining}
+                          enableTierPromptPricing={enableTierPromptPricing}
                           hideRemove
                           onRemove={() => undefined}
                         />
@@ -1581,6 +2437,14 @@ export default function ModelPricingPage() {
                           channelPrices={maintaining.channelPrices ?? []}
                           billingMode={maintaining.billingMode}
                         />
+                        {maintaining.tierPricing ? (
+                          <EffectiveChannelTierPricesPanel
+                            channelId={maintainSelectedChannelId}
+                            channelPrices={maintaining.channelPrices ?? []}
+                            officialRanges={maintaining.promptPriceGroups ?? []}
+                            billingMode={maintaining.billingMode}
+                          />
+                        ) : null}
                       </div>
                     ))}
                   </>
@@ -1670,6 +2534,7 @@ export default function ModelPricingPage() {
                           form={channelEditForm}
                           existingChannelPrices={channelEditModel.channelPrices ?? []}
                           officialPriceSource={channelEditModel}
+                          enableTierPromptPricing={enableTierPromptPricing}
                           channelIdDisabled
                           requireFutureEffective
                           hideRemove
@@ -1692,3 +2557,5 @@ export default function ModelPricingPage() {
     </div>
   );
 }
+
+export default ModelPricingPage;

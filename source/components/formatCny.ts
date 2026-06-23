@@ -29,9 +29,38 @@ export function formatCny2(value: number) {
   return `¥${roundAmountDisplay(value).toFixed(AMOUNT_DISPLAY_DECIMALS)}`;
 }
 
-/** 单价展示：模型定价列表摘要等 */
+/** 单价展示：模型定价列表摘要等（运营端存储/录入，9 位小数） */
 export function formatUnitPrice(value: number) {
   return `¥${roundUnitPrice(value).toFixed(UNIT_PRICE_DECIMALS)}`;
+}
+
+/** SaaS 客户端 Token 单价展示精度 */
+export const TOKEN_PRICE_M_DISPLAY_DECIMALS = 3;
+export const TOKEN_PRICE_K_DISPLAY_DECIMALS = 6;
+
+export type TokenPriceDisplayUnit = 'million' | 'thousand';
+
+export function getTokenPriceDisplayDecimals(unit: TokenPriceDisplayUnit): number {
+  return unit === 'million' ? TOKEN_PRICE_M_DISPLAY_DECIMALS : TOKEN_PRICE_K_DISPLAY_DECIMALS;
+}
+
+export function roundTokenDisplayPrice(value: number, unit: TokenPriceDisplayUnit): number {
+  const factor = 10 ** getTokenPriceDisplayDecimals(unit);
+  return Math.round(value * factor) / factor;
+}
+
+/** SaaS 展示：CNY / 1M Tokens 保留 3 位小数，CNY / 1K Tokens 保留 6 位小数 */
+export function formatTokenDisplayPrice(value: number, unit: TokenPriceDisplayUnit): string {
+  const decimals = getTokenPriceDisplayDecimals(unit);
+  return `¥${roundTokenDisplayPrice(value, unit).toFixed(decimals)}`;
+}
+
+/** SaaS 展示：按次计费每次价格，保留 3 位小数 */
+export const PER_CALL_DISPLAY_DECIMALS = 3;
+
+export function formatPerCallDisplayPrice(value: number): string {
+  const factor = 10 ** PER_CALL_DISPLAY_DECIMALS;
+  return `¥${(Math.round(value * factor) / factor).toFixed(PER_CALL_DISPLAY_DECIMALS)}`;
 }
 
 /** @deprecated 统一为 formatCny2（2 位小数展示） */

@@ -10,17 +10,16 @@ export interface GroupItem {
 
 export type ChannelPriceConfigMode = 'discount' | 'custom';
 
-export interface ChannelPriceItem {
-  channelId: string;
-  channelName: string;
-  /** 价格配置：折扣（按官方价 × 折扣系数）或自定义 */
-  priceConfigMode?: ChannelPriceConfigMode;
-  /** 折扣系数，仅 priceConfigMode 为 discount 时有效 */
+/** 阶梯价格：按输入区间维护的单价（单位 K Tokens，展示为 (下限, 上限]） */
+export interface PromptPriceGroup {
+  /** 输入区间下限（K Tokens，必填） */
+  rangeMin: number;
+  /** 输入区间上限（K Tokens，包含关系，如 128 表示 128k） */
+  rangeMax: number;
+  /** 按区间配置折扣时的区间折扣系数 */
   discountRate?: number;
-  /** 生效日期（精确到秒） */
-  effectiveDate?: string;
-  /** 渠道价格记录更新时间（精确到秒） */
-  updatedAt?: string;
+  /** 按次数计费 */
+  perCallPrice?: number;
   /** 按 Token 计费 */
   inputPrice?: number;
   completionPrice?: number;
@@ -32,7 +31,35 @@ export interface ChannelPriceItem {
   audioInputPrice?: number;
   audioOutputPrice?: number;
   videoOutputPrice?: number;
-  /** 按次数计费：每次价格 CNY */
+}
+
+export interface ChannelPriceItem {
+  channelId: string;
+  channelName: string;
+  /** 价格配置：折扣（按官方价 × 折扣系数）或自定义 */
+  priceConfigMode?: ChannelPriceConfigMode;
+  /** 折扣系数，仅 priceConfigMode 为 discount 且非按区间配置时有效 */
+  discountRate?: number;
+  /** 折扣是否按输入区间分别配置（默认 false：全区间统一折扣） */
+  discountByRange?: boolean;
+  /** 生效日期（精确到秒） */
+  effectiveDate?: string;
+  /** 渠道价格记录更新时间（精确到秒） */
+  updatedAt?: string;
+  /** 阶梯价格：按输入区间的渠道价 */
+  promptPriceGroups?: PromptPriceGroup[];
+  /** 按 Token 计费（非阶梯） */
+  inputPrice?: number;
+  completionPrice?: number;
+  cacheWritePrice?: number;
+  cacheReadPrice?: number;
+  imageInputPrice?: number;
+  imageOutputPrice?: number;
+  imageCacheReadPrice?: number;
+  audioInputPrice?: number;
+  audioOutputPrice?: number;
+  videoOutputPrice?: number;
+  /** 按次数计费：每次价格 CNY（非阶梯） */
   perCallPrice?: number;
 }
 
@@ -60,11 +87,13 @@ export interface ModelPricingItem {
   modelName: string;
   /** 厂商类型，取自字典 mockModelVendorTypes */
   vendorType: ModelVendorType;
-  modelType: 'vector' | 'text' | 'image' | 'video';
+  modelType: 'vector' | 'text' | 'image' | 'video' | 'audio';
   remark?: string;
   billingMode: 'token' | 'count';
   tierPricing: boolean;
-  /** 按 Token 计费 */
+  /** 阶梯价格：按输入区间的官方价 */
+  promptPriceGroups?: PromptPriceGroup[];
+  /** 按 Token 计费（非阶梯） */
   inputPrice?: number;
   /** 按次数计费：每次价格 CNY，9 位小数 */
   perCallPrice?: number;
@@ -197,6 +226,7 @@ export const mockModels: ModelPricingItem[] = [
     modelName: 'gpt-4o',
     vendorType: 'openai',
     modelType: 'text',
+    remark: '旗舰多模态模型，适合复杂对话与长上下文推理场景',
     billingMode: 'token',
     tierPricing: false,
     inputPrice: 18.0,
@@ -264,6 +294,7 @@ export const mockModels: ModelPricingItem[] = [
     modelName: 'gpt-4o-mini',
     vendorType: 'openai',
     modelType: 'text',
+    remark: '高性价比文本模型，适用于日常对话与批量调用',
     billingMode: 'token',
     tierPricing: false,
     inputPrice: 1.08,
@@ -295,6 +326,7 @@ export const mockModels: ModelPricingItem[] = [
     modelName: 'claude-3-5-sonnet',
     vendorType: 'anthropic',
     modelType: 'text',
+    remark: 'Anthropic 主力模型，擅长代码生成与文档分析',
     billingMode: 'token',
     tierPricing: false,
     inputPrice: 21.6,
@@ -317,6 +349,7 @@ export const mockModels: ModelPricingItem[] = [
     modelName: 'gemini-1.5-pro',
     vendorType: 'gemini',
     modelType: 'image',
+    remark: '支持图像理解与生成，按 Token 与图像维度分别计费',
     billingMode: 'token',
     tierPricing: false,
     inputPrice: 9.0,
@@ -331,6 +364,7 @@ export const mockModels: ModelPricingItem[] = [
     modelName: 'whisper-1',
     vendorType: 'openai',
     modelType: 'video',
+    remark: '语音转写模型，按音频输入/输出 Token 计费',
     billingMode: 'token',
     tierPricing: false,
     inputPrice: 0,
@@ -352,6 +386,7 @@ export const mockModels: ModelPricingItem[] = [
     modelName: 'dall-e-3',
     vendorType: 'openai',
     modelType: 'image',
+    remark: '图像生成模型，按次计费，每次生成一张标准尺寸图片',
     billingMode: 'count',
     tierPricing: false,
     perCallPrice: 0.08,
@@ -391,6 +426,87 @@ export const mockModels: ModelPricingItem[] = [
       }
     ],
     updatedAt: '2025-05-21 10:00:00'
+  }
+];
+
+/** 模型定价管理 copy：含阶梯价格示例 */
+export const mockModelsForPricingCopy: ModelPricingItem[] = [
+  ...mockModels,
+  {
+    id: 'm-tier-1',
+    modelName: 'claude-3-5-sonnet-tier',
+    vendorType: 'anthropic',
+    modelType: 'text',
+    remark: '阶梯价格示例：按输入区间维护官方价与渠道价',
+    billingMode: 'token',
+    tierPricing: true,
+    promptPriceGroups: [
+      {
+        rangeMin: 0,
+        rangeMax: 128,
+        inputPrice: 21.6,
+        completionPrice: 108.0,
+        cacheReadPrice: 2.16,
+        cacheWritePrice: 27.0
+      },
+      {
+        rangeMin: 128,
+        rangeMax: 200,
+        inputPrice: 32.4,
+        completionPrice: 162.0,
+        cacheReadPrice: 3.24,
+        cacheWritePrice: 40.5
+      }
+    ],
+    channelPrices: [
+      {
+        channelId: 'c1',
+        channelName: 'OpenAI-主渠道',
+        priceConfigMode: 'discount',
+        discountRate: 0.9,
+        discountByRange: false,
+        effectiveDate: '2025-06-01 00:00:00',
+        updatedAt: '2025-06-10 09:00:00',
+        promptPriceGroups: [
+          {
+            rangeMin: 0,
+            rangeMax: 128,
+            inputPrice: 19.44,
+            completionPrice: 97.2,
+            cacheReadPrice: 1.944,
+            cacheWritePrice: 24.3
+          },
+          {
+            rangeMin: 128,
+            rangeMax: 200,
+            inputPrice: 29.16,
+            completionPrice: 145.8,
+            cacheReadPrice: 2.916,
+            cacheWritePrice: 36.45
+          }
+        ]
+      },
+      {
+        channelId: 'c1',
+        channelName: 'OpenAI-主渠道',
+        priceConfigMode: 'discount',
+        discountByRange: true,
+        effectiveDate: '2025-07-01 00:00:00',
+        updatedAt: '2025-06-15 10:00:00',
+        promptPriceGroups: [
+          {
+            rangeMin: 0,
+            rangeMax: 128,
+            discountRate: 0.85,
+            inputPrice: 18.36,
+            completionPrice: 91.8,
+            cacheReadPrice: 1.836,
+            cacheWritePrice: 22.95
+          }
+        ]
+      }
+    ],
+    updatedAt: '2025-06-10 09:00:00'
   }
 ];
 
@@ -1036,6 +1152,83 @@ export function findPendingChannelPrice(
 }
 
 /** 同模型同渠道下当前「生效中」的渠道价格（用于计费，取生效日期最晚且已到达的一条） */
+export function getPromptRangeKey(group: Pick<PromptPriceGroup, 'rangeMin' | 'rangeMax'>): string {
+  return `${group.rangeMin}-${group.rangeMax}`;
+}
+
+function isValidPromptPriceGroup(group: PromptPriceGroup): boolean {
+  return typeof group.rangeMin === 'number'
+    && typeof group.rangeMax === 'number'
+    && !Number.isNaN(group.rangeMin)
+    && !Number.isNaN(group.rangeMax)
+    && group.rangeMax > group.rangeMin;
+}
+
+export function mergeOfficialInputRanges(groups: PromptPriceGroup[]): PromptPriceGroup[] {
+  const map = new Map<string, PromptPriceGroup>();
+  for (const group of groups.filter(isValidPromptPriceGroup)) {
+    map.set(getPromptRangeKey(group), group);
+  }
+  return [...map.values()].sort((a, b) => a.rangeMin - b.rangeMin);
+}
+
+/**
+ * 合并同渠道已生效的阶梯渠道价：全区间折扣记录覆盖全部区间；
+ * 按区间折扣记录仅覆盖对应区间，后生效的按区间折扣会取代此前全区间记录中同区间的价格。
+ */
+export function resolveEffectiveTierChannelPrices(
+  channelPrices: ChannelPriceItem[],
+  channelId: string,
+  officialRanges: PromptPriceGroup[],
+  now: Dayjs = dayjs()
+): PromptPriceGroup[] {
+  const sorted = channelPrices
+    .filter((item) => item.channelId === channelId && item.promptPriceGroups?.length)
+    .filter((item) => {
+      const effective = parseChannelDateTime(item.effectiveDate);
+      return effective != null && !now.isBefore(effective);
+    })
+    .sort((a, b) => {
+      const ae = parseChannelDateTime(a.effectiveDate)!.valueOf();
+      const be = parseChannelDateTime(b.effectiveDate)!.valueOf();
+      return ae - be;
+    });
+
+  const merged = new Map<string, PromptPriceGroup>();
+  for (const record of sorted) {
+    if (!record.promptPriceGroups?.length) continue;
+    for (const group of record.promptPriceGroups) {
+      if (isValidPromptPriceGroup(group)) {
+        merged.set(getPromptRangeKey(group), group);
+      }
+    }
+  }
+
+  return mergeOfficialInputRanges(officialRanges)
+    .map((official) => merged.get(getPromptRangeKey(official)))
+    .filter((group): group is PromptPriceGroup => !!group);
+}
+
+/** 判断全区间折扣记录中的某区间是否已被后续按区间折扣记录取代 */
+export function isTierRangeSuperseded(
+  item: ChannelPriceItem,
+  group: PromptPriceGroup,
+  channelPrices: ChannelPriceItem[],
+  now: Dayjs = dayjs()
+): boolean {
+  if (item.discountByRange) return false;
+  const itemEffective = parseChannelDateTime(item.effectiveDate);
+  if (!itemEffective || now.isBefore(itemEffective)) return false;
+
+  const key = getPromptRangeKey(group);
+  return channelPrices.some((record) => {
+    if (record.channelId !== item.channelId || record.discountByRange !== true) return false;
+    if (!record.promptPriceGroups?.some((row) => getPromptRangeKey(row) === key)) return false;
+    const recordEffective = parseChannelDateTime(record.effectiveDate);
+    return recordEffective != null && !now.isBefore(recordEffective) && recordEffective.isAfter(itemEffective);
+  });
+}
+
 export function getCurrentChannelPriceForBilling(
   channelPrices: ChannelPriceItem[],
   channelId: string,
