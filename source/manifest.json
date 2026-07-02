@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "format": "axhub-published-source",
+  "sourceRoot": "source",
+  "entry": "index.tsx",
+  "files": [
+    {
+      "path": "apply-management/index.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "channel/index.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "components/applyRecords.ts",
+      "kind": "source"
+    },
+    {
+      "path": "components/applyService.ts",
+      "kind": "source"
+    },
+    {
+      "path": "components/dashboardStats.ts",
+      "kind": "source"
+    },
+    {
+      "path": "components/exportApplyRecords.ts",
+      "kind": "source"
+    },
+    {
+      "path": "components/formatCny.ts",
+      "kind": "source"
+    },
+    {
+      "path": "components/FormLayout.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "components/mockData.ts",
+      "kind": "source"
+    },
+    {
+      "path": "components/page.css",
+      "kind": "source"
+    },
+    {
+      "path": "components/PageHeader.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "components/QuotaDisplay.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "components/usageLogColumns.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "components/useResponsive.ts",
+      "kind": "source"
+    },
+    {
+      "path": "dashboard/index.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "group/index.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "index.tsx",
+      "kind": "entry"
+    },
+    {
+      "path": "model-pricing-copy/index.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "model-pricing/index.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "project/index.tsx",
+      "kind": "source"
+    },
+    {
+      "path": "runtime-component-paste.js",
+      "kind": "source"
+    },
+    {
+      "path": "spec.md",
+      "kind": "source"
+    },
+    {
+      "path": "style.css",
+      "kind": "source"
+    },
+    {
+      "path": "usage-log/index.tsx",
+      "kind": "source"
+    }
+  ]
+}

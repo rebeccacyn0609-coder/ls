@@ -53,6 +53,7 @@ const ChannelPage = lazy(() => import('./channel'));
 const ModelPricingPage = lazy(() => import('./model-pricing'));
 const ModelPricingCopyPage = lazy(() => import('./model-pricing-copy'));
 const GroupPage = lazy(() => import('./group'));
+const ApplyManagementPage = lazy(() => import('./apply-management'));
 
 const { Text } = Typography;
 const { Content, Sider } = Layout;
@@ -78,6 +79,7 @@ const menuLabels: Record<string, string> = {
   channel: '渠道管理',
   'model-pricing': '模型定价管理',
   group: '分组管理',
+  'apply-management': '申请管理',
   'model-pricing-copy': '模型定价管理copy',
 };
 
@@ -88,6 +90,7 @@ const moduleComponents: Record<string, React.ComponentType> = {
   channel: ChannelPage,
   'model-pricing': ModelPricingPage,
   group: GroupPage,
+  'apply-management': ApplyManagementPage,
   'model-pricing-copy': ModelPricingCopyPage,
 };
 
@@ -115,6 +118,7 @@ const menuItems = [
       { key: 'channel', icon: <ApiOutlined />, label: '渠道管理' },
       { key: 'model-pricing', icon: <DollarOutlined />, label: '模型定价管理' },
       { key: 'group', icon: <GroupOutlined />, label: '分组管理' },
+      { key: 'apply-management', icon: <FileTextOutlined />, label: '申请管理' },
       { key: 'model-pricing-copy', icon: <DollarOutlined />, label: '模型定价管理copy' }
     ]
   },

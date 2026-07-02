@@ -70,7 +70,20 @@ export const mockModelVendorTypes = [
   { value: 'gemini', label: 'Gemini' },
   { value: 'qwen', label: 'Qwen' },
   { value: 'kimi', label: 'Kimi' },
-  { value: 'deepseek', label: 'DeepSeek' }
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'minimax', label: 'MiniMax' },
+  { value: 'glm', label: '智谱 GLM' },
+  { value: 'mistral', label: 'Mistral' },
+  { value: 'meta', label: 'Meta' },
+  { value: 'cohere', label: 'Cohere' },
+  { value: 'xai', label: 'xAI' },
+  { value: 'baichuan', label: '百川' },
+  { value: 'doubao', label: '豆包' },
+  { value: 'hunyuan', label: '混元' },
+  { value: 'wenxin', label: '文心' },
+  { value: 'stepfun', label: '阶跃' },
+  { value: 'spark', label: '星火' },
+  { value: 'yi', label: '零一万物' },
 ] as const;
 
 export type ModelVendorType = (typeof mockModelVendorTypes)[number]['value'];
@@ -456,6 +469,13 @@ export const mockModelsForPricingCopy: ModelPricingItem[] = [
         completionPrice: 162.0,
         cacheReadPrice: 3.24,
         cacheWritePrice: 40.5
+      },
+      {
+        rangeMin: 200,
+        inputPrice: 40.5,
+        completionPrice: 202.5,
+        cacheReadPrice: 4.05,
+        cacheWritePrice: 50.6
       }
     ],
     channelPrices: [
